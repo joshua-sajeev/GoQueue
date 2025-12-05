@@ -1,0 +1,20 @@
+# Use official Golang image
+FROM golang:latest
+
+# Install Air for hot-reloading
+RUN go install github.com/air-verse/air@latest
+RUN go install github.com/swaggo/swag/cmd/swag@latest
+
+# Set working directory
+WORKDIR /app
+
+# Copy go modules
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy rest of the files
+COPY . .
+
+EXPOSE 8080
+
+CMD ["air"]

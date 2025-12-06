@@ -280,7 +280,6 @@ func TestLoadConfigFromEnv(t *testing.T) {
 			assert.NoError(t, err)
 			assert.NotNil(t, got)
 
-			// Compare all fields
 			assert.Equal(t, tt.want.User, got.User)
 			assert.Equal(t, tt.want.Password, got.Password)
 			assert.Equal(t, tt.want.Database, got.Database)

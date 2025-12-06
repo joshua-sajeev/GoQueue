@@ -3,6 +3,7 @@ module github.com/joshu-sajeev/goqueue
 go 1.25.4
 
 require (
+	github.com/joho/godotenv v1.5.1
 	github.com/sethvargo/go-envconfig v1.3.0
 	gorm.io/datatypes v1.2.7
 	gorm.io/driver/postgres v1.6.0
@@ -20,7 +21,7 @@ require (
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	golang.org/x/crypto v0.31.0 // indirect
-	golang.org/x/sync v0.10.0 // indirect
+	golang.org/x/sync v0.18.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
 	gorm.io/driver/mysql v1.5.6 // indirect
 )

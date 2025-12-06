@@ -22,6 +22,7 @@ services:
       context: ..
       dockerfile: Dockerfile.dev
     container_name: goqueue_container
+    image: goqueue_app:dev
     volumes:
       - ..:/app
     depends_on:
@@ -33,12 +34,6 @@ services:
       - mynetwork
     ports:
       - "8080:8080"
-    healthcheck:
-      test: ["CMD", "test", "-f", "/app/.env"]
-      interval: 5s
-      timeout: 2s
-      retries: 5
-      start_period: 2s
 
 networks:
   mynetwork:

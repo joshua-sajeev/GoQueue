@@ -6,8 +6,6 @@ import (
 
 	"github.com/joshu-sajeev/goqueue/internal/models"
 	"github.com/joshu-sajeev/goqueue/internal/storage/postgres"
-	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
 
 func main() {
@@ -24,9 +22,9 @@ func main() {
 		log.Fatal("Connection failed:", err)
 	}
 
-	db.Session(&gorm.Session{
-		Logger: logger.Default.LogMode(logger.Silent),
-	}).AutoMigrate(&models.Job{})
+	if err := db.AutoMigrate(&models.Job{}); err != nil {
+		log.Fatalf("Failed to migrate Job: %v", err)
+	}
 	log.Println("SUCCESS! Database connected")
 	_ = db
 	select {}

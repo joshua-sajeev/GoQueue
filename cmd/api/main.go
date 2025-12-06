@@ -22,7 +22,7 @@ func main() {
 		log.Fatal("Connection failed:", err)
 	}
 
-	if err := db.AutoMigrate(&models.Job{}); err != nil {
+	if err := postgres.MigrateModels(db, &models.Job{}); err != nil {
 		log.Fatalf("Failed to migrate Job: %v", err)
 	}
 	log.Println("SUCCESS! Database connected")

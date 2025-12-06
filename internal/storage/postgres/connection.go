@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,13 +26,73 @@ type Config struct {
 	LogLevel       logger.LogLevel
 }
 
+// to help with testing
+var envProcess = envconfig.Process
+
 func LoadConfigFromEnv(ctx context.Context) (*Config, error) {
 	var cfg Config
-	if err := envconfig.Process(ctx, &cfg); err != nil {
+	if err := envProcess(ctx, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to process env config: %w", err)
 	}
+
+	// Validate required fields
+	if err := validateConfig(&cfg); err != nil {
+		return nil, fmt.Errorf("config validation failed: %w", err)
+	}
+
 	cfg.LogLevel = ParseLogLevel(cfg.LogLevelString)
 	return &cfg, nil
+}
+
+func validateConfig(cfg *Config) error {
+	var errors []string
+
+	if strings.TrimSpace(cfg.User) == "" {
+		errors = append(errors, "POSTGRES_USER is required")
+	}
+
+	if strings.TrimSpace(cfg.Database) == "" {
+		errors = append(errors, "POSTGRES_DB is required")
+	}
+
+	if strings.TrimSpace(cfg.Host) == "" {
+		errors = append(errors, "POSTGRES_HOST is required")
+	}
+
+	if strings.TrimSpace(cfg.Port) == "" {
+		errors = append(errors, "POSTGRES_PORT is required")
+	}
+	// Validate port is numeric and in valid range
+	if cfg.Port != "" {
+		port, err := strconv.Atoi(cfg.Port)
+		if err != nil {
+			errors = append(errors, "POSTGRES_PORT must be a valid number")
+		} else if port < 1 || port > 65535 {
+			errors = append(errors, "POSTGRES_PORT must be between 1 and 65535")
+		}
+	}
+
+	// Validate MaxRetries is non-negative
+	if cfg.MaxRetries < 0 {
+		errors = append(errors, "DB_MAX_RETRIES must be non-negative")
+	}
+
+	// Validate RetryDelay is positive
+	if cfg.RetryDelay <= 0 {
+		errors = append(errors, "DB_RETRY_DELAY must be positive")
+	}
+
+	// Validate RetryDelay is not excessively large (optional, adjust threshold as needed)
+	if cfg.RetryDelay > 10*time.Minute {
+		errors = append(errors, "DB_RETRY_DELAY must not exceed 10 minutes")
+	}
+
+	// Return combined errors if any exist
+	if len(errors) > 0 {
+		return fmt.Errorf("%s", strings.Join(errors, "; "))
+	}
+
+	return nil
 }
 
 // ConnectDB establishes connection to PostgreSQL

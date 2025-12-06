@@ -7,7 +7,7 @@ import (
 )
 
 type Job struct {
-	ID         string         `gorm:"primaryKey"`
+	ID         uint           `gorm:"primaryKey;autoIncrement"`
 	Queue      string         `gorm:"type:varchar(255);not null"`
 	Type       string         `gorm:"type:varchar(255);not null"`
 	Payload    datatypes.JSON `gorm:"type:jsonb"`

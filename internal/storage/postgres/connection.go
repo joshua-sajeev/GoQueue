@@ -14,14 +14,15 @@ import (
 )
 
 type Config struct {
-	User       string        `env:"POSTGRES_USER,default=postgres"`
-	Password   string        `env:"POSTGRES_PASSWORD,default=postgres"`
-	Host       string        `env:"POSTGRES_HOST,default=database"`
-	Port       string        `env:"POSTGRES_PORT,default=5432"`
-	Database   string        `env:"POSTGRES_DB,default=taskdb"`
-	MaxRetries int           `env:"DB_MAX_RETRIES,default=10"`
-	RetryDelay time.Duration `env:"DB_RETRY_DELAY,default=2s"`
-	LogLevel   logger.LogLevel
+	User           string        `env:"POSTGRES_USER,default=postgres"`
+	Password       string        `env:"POSTGRES_PASSWORD,default=postgres"`
+	Host           string        `env:"POSTGRES_HOST,default=postgres"`
+	Port           string        `env:"POSTGRES_PORT,default=5432"`
+	Database       string        `env:"POSTGRES_DB,default=taskdb"`
+	MaxRetries     int           `env:"DB_MAX_RETRIES,default=10"`
+	RetryDelay     time.Duration `env:"DB_RETRY_DELAY,default=2s"`
+	LogLevelString string        `env:"DB_LOG_LEVEL,default=warn"`
+	LogLevel       logger.LogLevel
 }
 
 func LoadConfigFromEnv(ctx context.Context) (*Config, error) {
@@ -29,8 +30,7 @@ func LoadConfigFromEnv(ctx context.Context) (*Config, error) {
 	if err := envconfig.Process(ctx, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to process env config: %w", err)
 	}
-	//TODO: move this to a env file
-	cfg.LogLevel = logger.Silent
+	cfg.LogLevel = ParseLogLevel(cfg.LogLevelString)
 	return &cfg, nil
 }
 
@@ -110,4 +110,20 @@ func simplifyDBError(err error) string {
 	}
 
 	return "database error"
+}
+
+// Convert string to logger.LogLevel
+func ParseLogLevel(levelStr string) logger.LogLevel {
+	switch strings.ToLower(levelStr) {
+	case "silent":
+		return logger.Silent
+	case "error":
+		return logger.Error
+	case "warn":
+		return logger.Warn
+	case "info":
+		return logger.Info
+	default:
+		return logger.Warn
+	}
 }

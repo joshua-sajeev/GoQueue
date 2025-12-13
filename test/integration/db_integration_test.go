@@ -45,7 +45,6 @@ func TestMain(m *testing.M) {
 			"POSTGRES_USER=testuser",
 			"POSTGRES_PASSWORD=testpass",
 			"POSTGRES_DB=example",
-			"POSTGRES_HOST_AUTH_METHOD=trust",
 		},
 	}, func(config *docker.HostConfig) {
 		config.AutoRemove = true
@@ -277,19 +276,77 @@ func TestConnectDB(t *testing.T) {
 			},
 		},
 		{
-			name: "Test 5: invalid host",
+			name: "Test 5a: Connection refused (wrong port)",
 			config: &postgres.Config{
-				User:       "testuser",
-				Password:   "testpass",
-				Host:       "invalidhost-123",
-				Port:       testPort,
-				Database:   "example",
-				MaxRetries: 4,
-				RetryDelay: 100 * time.Millisecond,
-				LogLevel:   logger.Silent,
+				User:           "testuser",
+				Password:       "testpass",
+				Host:           "localhost",
+				Port:           "19999",
+				Database:       "example",
+				MaxRetries:     2,
+				RetryDelay:     5 * time.Millisecond,
+				LogLevel:       logger.Silent,
+				ConnectTimeout: 1,
+			},
+			wantErr:     true,
+			errContains: "database connection failed after 2 attempts",
+			validate: func(t *testing.T, db *gorm.DB) {
+				assert.Nil(t, db)
+			},
+		},
+		{
+			name: "Test 5b: Invalid credentials",
+			config: &postgres.Config{
+				User:           "testuser",
+				Password:       "wrongpass",
+				Host:           "localhost",
+				Port:           testPort,
+				Database:       "example",
+				MaxRetries:     2,
+				RetryDelay:     5 * time.Millisecond,
+				LogLevel:       logger.Silent,
+				ConnectTimeout: 1,
+			},
+			wantErr:     true,
+			errContains: "database connection failed after 2 attempts",
+			validate: func(t *testing.T, db *gorm.DB) {
+				assert.Nil(t, db)
+			},
+		},
+		{
+			name: "Test 5c: Non-existent database",
+			config: &postgres.Config{
+				User:           "testuser",
+				Password:       "testpass",
+				Host:           "localhost",
+				Port:           testPort,
+				Database:       "nonexistent_db",
+				MaxRetries:     4,
+				RetryDelay:     5 * time.Millisecond,
+				LogLevel:       logger.Silent,
+				ConnectTimeout: 1,
 			},
 			wantErr:     true,
 			errContains: "database connection failed after 4 attempts",
+			validate: func(t *testing.T, db *gorm.DB) {
+				assert.Nil(t, db)
+			},
+		},
+		{
+			name: "Test 5d: Network timeout (non-routable IP)",
+			config: &postgres.Config{
+				User:           "testuser",
+				Password:       "testpass",
+				Host:           "192.0.2.1",
+				Port:           "5432",
+				Database:       "example",
+				MaxRetries:     2,
+				RetryDelay:     5 * time.Millisecond,
+				LogLevel:       logger.Silent,
+				ConnectTimeout: 1,
+			},
+			wantErr:     true,
+			errContains: "database connection failed after 2 attempts",
 			validate: func(t *testing.T, db *gorm.DB) {
 				assert.Nil(t, db)
 			},
@@ -333,11 +390,15 @@ func TestConnectDB(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Create context with timeout for each test
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
 			if tt.setupEnv != nil {
 				tt.setupEnv()
 			}
 
-			db, err := postgres.ConnectDB(tt.config)
+			db, err := postgres.ConnectDB(ctx, tt.config)
 
 			if tt.wantErr {
 				assert.Error(t, err, "Expected an error but got none")
@@ -348,11 +409,9 @@ func TestConnectDB(t *testing.T) {
 			} else {
 				require.NoError(t, err, "Expected no error but got: %v", err)
 				require.NotNil(t, db, "Expected db to be non-nil")
-
 				if tt.validate != nil {
 					tt.validate(t, db)
 				}
-
 				sqlDB, err := db.DB()
 				if err == nil {
 					sqlDB.Close()

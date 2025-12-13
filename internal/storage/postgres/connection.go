@@ -15,13 +15,14 @@ import (
 )
 
 type Config struct {
-	User           string        `env:"POSTGRES_USER,default=postgres"`
-	Password       string        `env:"POSTGRES_PASSWORD,default=postgres"`
-	Host           string        `env:"POSTGRES_HOST,default=postgres"`
-	Port           string        `env:"POSTGRES_PORT,default=5432"`
-	Database       string        `env:"POSTGRES_DB,default=taskdb"`
+	User           string        `env:"POSTGRES_USER,required"`
+	Password       string        `env:"POSTGRES_PASSWORD,required"`
+	Host           string        `env:"POSTGRES_HOST,required"`
+	Port           string        `env:"POSTGRES_PORT,required"`
+	Database       string        `env:"POSTGRES_DB,required"`
 	MaxRetries     int           `env:"DB_MAX_RETRIES,default=10"`
 	RetryDelay     time.Duration `env:"DB_RETRY_DELAY,default=2s"`
+	ConnectTimeout int           `env:"DB_CONNECT_TIMEOUT,default=5"`
 	LogLevelString string        `env:"DB_LOG_LEVEL,default=warn"`
 	LogLevel       logger.LogLevel
 }
@@ -35,7 +36,6 @@ func LoadConfigFromEnv(ctx context.Context) (*Config, error) {
 		return nil, fmt.Errorf("failed to process env config: %w", err)
 	}
 
-	// Validate required fields
 	if err := validateConfig(&cfg); err != nil {
 		return nil, fmt.Errorf("config validation failed: %w", err)
 	}
@@ -62,7 +62,6 @@ func validateConfig(cfg *Config) error {
 	if strings.TrimSpace(cfg.Port) == "" {
 		errors = append(errors, "POSTGRES_PORT is required")
 	}
-	// Validate port is numeric and in valid range
 	if cfg.Port != "" {
 		port, err := strconv.Atoi(cfg.Port)
 		if err != nil {
@@ -72,22 +71,18 @@ func validateConfig(cfg *Config) error {
 		}
 	}
 
-	// Validate MaxRetries is non-negative
 	if cfg.MaxRetries < 0 {
 		errors = append(errors, "DB_MAX_RETRIES must be non-negative")
 	}
 
-	// Validate RetryDelay is positive
 	if cfg.RetryDelay <= 0 {
 		errors = append(errors, "DB_RETRY_DELAY must be positive")
 	}
 
-	// Validate RetryDelay is not excessively large (optional, adjust threshold as needed)
 	if cfg.RetryDelay > 10*time.Minute {
 		errors = append(errors, "DB_RETRY_DELAY must not exceed 10 minutes")
 	}
 
-	// Return combined errors if any exist
 	if len(errors) > 0 {
 		return fmt.Errorf("%s", strings.Join(errors, "; "))
 	}
@@ -95,10 +90,9 @@ func validateConfig(cfg *Config) error {
 	return nil
 }
 
-// ConnectDB establishes connection to PostgreSQL
-func ConnectDB(cfg *Config) (*gorm.DB, error) {
+// ConnectDB establishes connection to PostgreSQL with context support
+func ConnectDB(ctx context.Context, cfg *Config) (*gorm.DB, error) {
 	if cfg == nil {
-		ctx := context.Background()
 		loadedCfg, err := LoadConfigFromEnv(ctx)
 		if err != nil {
 			return nil, err
@@ -107,13 +101,11 @@ func ConnectDB(cfg *Config) (*gorm.DB, error) {
 	}
 
 	dsn := fmt.Sprintf(
-		"host=%s user=%s password=%s dbname=%s port=%s sslmode=disable",
-		cfg.Host, cfg.User, cfg.Password, cfg.Database, cfg.Port,
+		"host=%s user=%s password=%s dbname=%s port=%s sslmode=disable connect_timeout=%d",
+		cfg.Host, cfg.User, cfg.Password, cfg.Database, cfg.Port, cfg.ConnectTimeout,
 	)
 
 	log.Printf("Connecting to: %s@%s:%s/%s", cfg.User, cfg.Host, cfg.Port, cfg.Database)
-
-	time.Sleep(3 * time.Second)
 
 	gormConfig := &gorm.Config{
 		Logger: logger.Default.LogMode(logger.LogLevel(cfg.LogLevel)),
@@ -121,14 +113,19 @@ func ConnectDB(cfg *Config) (*gorm.DB, error) {
 
 	// Try connection with retries
 	for i := 0; i < cfg.MaxRetries; i++ {
+		// Check if context is cancelled before attempting connection
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+
 		log.Printf("[DB] Attempt %d/%d: connecting...", i+1, cfg.MaxRetries)
 
 		gdb, err := gorm.Open(postgres.Open(dsn), gormConfig)
 		if err == nil {
 			sqlDB, dbErr := gdb.DB()
 			if dbErr == nil {
-				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-				pingErr := sqlDB.PingContext(ctx)
+				pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+				pingErr := sqlDB.PingContext(pingCtx)
 				cancel()
 
 				if pingErr == nil {
@@ -149,7 +146,12 @@ func ConnectDB(cfg *Config) (*gorm.DB, error) {
 		log.Printf("[DB][WARN] %s. Retrying in %v...",
 			simplifyDBError(err), cfg.RetryDelay)
 
-		time.Sleep(cfg.RetryDelay)
+		// Respect context cancellation during retry delay
+		select {
+		case <-time.After(cfg.RetryDelay):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
 
 	return nil, fmt.Errorf("database connection failed after %d attempts", cfg.MaxRetries)

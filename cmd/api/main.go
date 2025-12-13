@@ -17,7 +17,7 @@ func main() {
 		log.Fatal("Failed to load config:", err)
 	}
 
-	db, err := postgres.ConnectDB(cfg)
+	db, err := postgres.ConnectDB(ctx, cfg)
 	if err != nil {
 		log.Fatal("Connection failed:", err)
 	}

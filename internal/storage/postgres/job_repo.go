@@ -20,6 +20,8 @@ func NewJobRepository(db *gorm.DB) *JobRepository {
 
 var _ job.JobRepoInterface = (*JobRepository)(nil)
 
+// Create inserts a new job record into the database using the
+// provided context for cancellation and timeout propagation.
 func (r *JobRepository) Create(ctx context.Context, job *models.Job) error {
 	if err := r.db.WithContext(ctx).Create(job).Error; err != nil {
 		return fmt.Errorf("create job: %w", err)

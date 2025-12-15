@@ -3,6 +3,7 @@ package job
 import (
 	"context"
 
+	"github.com/gin-gonic/gin"
 	"github.com/joshu-sajeev/goqueue/internal/dto"
 	"github.com/joshu-sajeev/goqueue/internal/models"
 	"gorm.io/datatypes"
@@ -24,4 +25,13 @@ type JobServiceInterface interface {
 	IncrementAttempts(id string) error
 	SaveResult(id string, result datatypes.JSON, err string) error
 	ListJobs(queue string) ([]models.Job, error)
+}
+
+type JobHandlerInterface interface {
+	Create(c *gin.Context)
+	Get(c *gin.Context)
+	Update(c *gin.Context)
+	Increment(c *gin.Context)
+	Save(c *gin.Context)
+	List(c *gin.Context)
 }

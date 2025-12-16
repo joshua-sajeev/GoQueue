@@ -3,7 +3,12 @@ FROM golang:latest
 
 # Install Air for hot-reloading
 RUN go install github.com/air-verse/air@latest
+
+# Install swag for Swagger docs
 RUN go install github.com/swaggo/swag/cmd/swag@latest
+
+# Install Goose for database migrations
+RUN go install github.com/pressly/goose/v3/cmd/goose@latest
 
 # Set working directory
 WORKDIR /app
@@ -17,4 +22,8 @@ COPY . .
 
 EXPOSE 8080
 
-CMD ["air"]
+# Make entrypoint script executable
+RUN chmod +x ./entrypoint.sh
+
+# Run entrypoint script
+CMD ["./entrypoint.sh"]

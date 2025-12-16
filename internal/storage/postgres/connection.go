@@ -190,13 +190,3 @@ func ParseLogLevel(levelStr string) logger.LogLevel {
 		return logger.Warn
 	}
 }
-
-// TODO: use goose to automigrate
-// Automigrate the provided models
-func MigrateModels(db *gorm.DB, models ...any) error {
-	if err := db.AutoMigrate(models...); err != nil {
-		return fmt.Errorf("auto-migration failed: %w", err)
-	}
-	log.Println("Database migration completed successfully")
-	return nil
-}

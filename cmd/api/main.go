@@ -9,7 +9,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/joshu-sajeev/goqueue/common"
 	"github.com/joshu-sajeev/goqueue/internal/job"
-	"github.com/joshu-sajeev/goqueue/internal/models"
 	"github.com/joshu-sajeev/goqueue/internal/storage/postgres"
 	"github.com/joshu-sajeev/goqueue/middleware"
 	"gorm.io/gorm"
@@ -29,9 +28,6 @@ func main() {
 		log.Fatal("Connection failed:", err)
 	}
 
-	if err := postgres.MigrateModels(db, &models.Job{}); err != nil {
-		log.Fatalf("Failed to migrate Job: %v", err)
-	}
 	log.Println("SUCCESS! Database connected")
 
 	jobRepo := postgres.NewJobRepository(db)

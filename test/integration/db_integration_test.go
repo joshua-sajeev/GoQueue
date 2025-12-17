@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -13,6 +15,7 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
+	"github.com/pressly/goose/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -93,6 +96,13 @@ func TestMain(m *testing.M) {
 
 		log.Printf("Successfully connected to PostgreSQL: %s", version)
 
+		// Run Goose migrations
+		if err := runMigrations(testDB); err != nil {
+			log.Printf("Failed to run migrations: %v", err)
+			testDB.Close()
+			return err
+		}
+
 		// Create additional test database for Test 2
 		_, err = testDB.Exec("CREATE DATABASE example2")
 		if err != nil {
@@ -126,6 +136,31 @@ func TestMain(m *testing.M) {
 	}
 
 	os.Exit(code)
+}
+
+func runMigrations(db *sql.DB) error {
+	// Get the path to migrations directory
+	// Adjust based on where this file is and where migrations are stored
+	_, filename, _, _ := runtime.Caller(0)
+	testDir := filepath.Dir(filename)
+	projectRoot := filepath.Join(testDir, "../..")
+	migrationsDir := filepath.Join(projectRoot, "migrations")
+
+	// Verify migrations directory exists
+	if _, err := os.Stat(migrationsDir); os.IsNotExist(err) {
+		return fmt.Errorf("migrations directory does not exist: %s", migrationsDir)
+	}
+
+	if err := goose.SetDialect("postgres"); err != nil {
+		return fmt.Errorf("failed to set goose dialect: %w", err)
+	}
+
+	if err := goose.Up(db, migrationsDir); err != nil {
+		return fmt.Errorf("failed to run goose migrations: %w", err)
+	}
+
+	log.Println("Migrations completed successfully")
+	return nil
 }
 
 func TestConnectDB(t *testing.T) {

@@ -1,15 +1,18 @@
-package postgres
+package integration
 
 import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/joshu-sajeev/goqueue/internal/models"
+	"github.com/joshu-sajeev/goqueue/internal/storage/postgres"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 func TestJobRepository_Create(t *testing.T) {
@@ -67,15 +70,44 @@ func TestJobRepository_Create(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			db := SetupTestDB(t)
-			repo := NewJobRepository(db)
+			// Get a fresh DB connection from the test database set up by TestMain
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
 
-			// Call setup BEFORE creating the job
+			config := &postgres.Config{
+				User:       "testuser",
+				Password:   "testpass",
+				Host:       "localhost",
+				Port:       testPort, // Set by TestMain
+				Database:   "example",
+				MaxRetries: 3,
+				RetryDelay: 100 * time.Millisecond,
+				LogLevel:   logger.Silent,
+			}
+
+			db, err := postgres.ConnectDB(ctx, config)
+			require.NoError(t, err, "Failed to connect to test database")
+
+			defer func() {
+				sqlDB, _ := db.DB()
+				if sqlDB != nil {
+					sqlDB.Close()
+				}
+			}()
+
+			// Clean up the jobs table before each test
+			db.Exec("DELETE FROM jobs WHERE id IN (1, 2, 3)")
+
+			// Create repository
+			repo := postgres.NewJobRepository(db)
+
+			// Run setup if provided
 			if tt.setup != nil {
 				tt.setup(db)
 			}
 
-			err := repo.Create(context.Background(), tt.job)
+			// Execute the test
+			err = repo.Create(context.Background(), tt.job)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -85,6 +117,7 @@ func TestJobRepository_Create(t *testing.T) {
 
 			require.NoError(t, err)
 
+			// Verify the job was saved
 			var saved models.Job
 			dbErr := db.First(&saved, tt.job.ID).Error
 			require.NoError(t, dbErr)

@@ -1,10 +1,8 @@
 package integration
 
 import (
-	"context"
 	"encoding/json"
 	"testing"
-	"time"
 
 	"github.com/joshu-sajeev/goqueue/internal/models"
 	"github.com/joshu-sajeev/goqueue/internal/storage/postgres"
@@ -12,7 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
 
 func TestJobRepository_Create(t *testing.T) {
@@ -26,8 +23,8 @@ func TestJobRepository_Create(t *testing.T) {
 			name: "success case",
 			job: &models.Job{
 				ID:         1,
-				Queue:      "hi",
-				Type:       "hi",
+				Queue:      "email",
+				Type:       "send_email",
 				Payload:    datatypes.JSON([]byte(`{"email":"test@example.com","foo":"bar"}`)),
 				Status:     "done",
 				Attempts:   0,
@@ -41,14 +38,14 @@ func TestJobRepository_Create(t *testing.T) {
 			name: "db error on duplicate primary key",
 			job: &models.Job{
 				ID:    2,
-				Queue: "q",
-				Type:  "t",
+				Queue: "email",
+				Type:  "send_email",
 			},
 			setup: func(db *gorm.DB) {
 				_ = db.Create(&models.Job{
 					ID:    2,
-					Queue: "existing",
-					Type:  "existing",
+					Queue: "reports",
+					Type:  "generate_report",
 				}).Error
 			},
 			wantErr: true,
@@ -57,8 +54,8 @@ func TestJobRepository_Create(t *testing.T) {
 			name: "error when db connection is closed",
 			job: &models.Job{
 				ID:    3,
-				Queue: "q",
-				Type:  "email",
+				Queue: "email",
+				Type:  "send_email",
 			},
 			setup: func(db *gorm.DB) {
 				sqlDB, _ := db.DB()
@@ -70,33 +67,9 @@ func TestJobRepository_Create(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Get a fresh DB connection from the test database set up by TestMain
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
 
-			config := &postgres.Config{
-				User:       "testuser",
-				Password:   "testpass",
-				Host:       "localhost",
-				Port:       testPort, // Set by TestMain
-				Database:   "example",
-				MaxRetries: 3,
-				RetryDelay: 100 * time.Millisecond,
-				LogLevel:   logger.Silent,
-			}
-
-			db, err := postgres.ConnectDB(ctx, config)
-			require.NoError(t, err, "Failed to connect to test database")
-
-			defer func() {
-				sqlDB, _ := db.DB()
-				if sqlDB != nil {
-					sqlDB.Close()
-				}
-			}()
-
-			// Clean up the jobs table before each test
-			db.Exec("DELETE FROM jobs WHERE id IN (1, 2, 3)")
+			db, ctx := setupTestDB(t)
+			defer closeTestDB(db)
 
 			// Create repository
 			repo := postgres.NewJobRepository(db)
@@ -107,7 +80,7 @@ func TestJobRepository_Create(t *testing.T) {
 			}
 
 			// Execute the test
-			err = repo.Create(context.Background(), tt.job)
+			err := repo.Create(ctx, tt.job)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -145,6 +118,476 @@ func TestJobRepository_Create(t *testing.T) {
 				require.NoError(t, err)
 				assert.Equal(t, "ok", result["status"])
 			}
+		})
+	}
+}
+
+func TestJobRepository_Get(t *testing.T) {
+	tests := []struct {
+		name        string
+		id          uint
+		setup       func(db *gorm.DB)
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "successfully get existing job",
+			id:   1,
+			setup: func(db *gorm.DB) {
+				db.Create(&models.Job{
+					ID:         1,
+					Queue:      "email",
+					Type:       "send_email",
+					Payload:    datatypes.JSON([]byte(`{"email":"test@example.com","foo":"bar"}`)),
+					Status:     "done",
+					Attempts:   0,
+					MaxRetries: 10,
+					Result:     datatypes.JSON([]byte(`{"status":"ok"}`)),
+					Error:      "s",
+				})
+			},
+			wantErr:     false,
+			errContains: "",
+		},
+		{
+			name:        "job not found",
+			id:          999,
+			wantErr:     true,
+			errContains: "job not found",
+		},
+		{
+			name: "db failure during get",
+			id:   1,
+			setup: func(db *gorm.DB) {
+				sqlDB, _ := db.DB()
+				_ = sqlDB.Close()
+			},
+			wantErr:     true,
+			errContains: "get job",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+
+			db, ctx := setupTestDB(t)
+			defer closeTestDB(db)
+
+			repo := postgres.NewJobRepository(db)
+
+			if tt.setup != nil {
+				tt.setup(db)
+			}
+
+			got, err := repo.Get(ctx, tt.id)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+				return
+			}
+
+			require.NoError(t, err)
+			require.NotNil(t, got)
+
+			assert.Equal(t, uint(1), got.ID)
+			assert.Equal(t, "email", got.Queue)
+			assert.Equal(t, "send_email", got.Type)
+			assert.Equal(t, "done", got.Status)
+			assert.Equal(t, 0, got.Attempts)
+			assert.Equal(t, 10, got.MaxRetries)
+			assert.Equal(t, "s", got.Error)
+
+			var payload map[string]any
+			err = json.Unmarshal(got.Payload, &payload)
+			require.NoError(t, err)
+			assert.Equal(t, "test@example.com", payload["email"])
+			assert.Equal(t, "bar", payload["foo"])
+
+			var result map[string]any
+			err = json.Unmarshal(got.Result, &result)
+			require.NoError(t, err)
+			assert.Equal(t, "ok", result["status"])
+		})
+	}
+}
+
+func TestJobRepository_UpdateStatus(t *testing.T) {
+	tests := []struct {
+		name        string
+		id          uint
+		status      string
+		setup       func(db *gorm.DB)
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:   "successfully update job status",
+			id:     1,
+			status: "processing",
+			setup: func(db *gorm.DB) {
+				db.Create(&models.Job{
+					ID:     1,
+					Queue:  "email",
+					Type:   "send_email",
+					Status: "pending",
+				})
+			},
+			wantErr: false,
+		},
+		{
+			name:   "db failure during update",
+			id:     1,
+			status: "completed",
+			setup: func(db *gorm.DB) {
+				sqlDB, _ := db.DB()
+				_ = sqlDB.Close()
+			},
+			wantErr:     true,
+			errContains: "update status",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db, ctx := setupTestDB(t)
+			defer closeTestDB(db)
+
+			repo := postgres.NewJobRepository(db)
+
+			if tt.setup != nil {
+				tt.setup(db)
+			}
+
+			err := repo.UpdateStatus(ctx, tt.id, tt.status)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errContains)
+				return
+			}
+
+			require.NoError(t, err)
+
+			var job models.Job
+			err = db.First(&job, tt.id).Error
+			require.NoError(t, err)
+			assert.Equal(t, tt.status, job.Status)
+		})
+	}
+}
+
+func TestJobRepository_IncrementAttempts(t *testing.T) {
+	tests := []struct {
+		name        string
+		id          uint
+		setup       func(db *gorm.DB)
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "successfully increment attempts",
+			id:   1,
+			setup: func(db *gorm.DB) {
+				db.Create(&models.Job{
+					ID:       1,
+					Attempts: 0,
+				})
+			},
+			wantErr: false,
+		},
+		{
+			name: "db failure during increment",
+			id:   1,
+			setup: func(db *gorm.DB) {
+				sqlDB, _ := db.DB()
+				_ = sqlDB.Close()
+			},
+			wantErr:     true,
+			errContains: "increment attempts",
+		},
+		{
+			name: "increment attempts multiple times",
+			id:   1,
+			setup: func(db *gorm.DB) {
+				db.Create(&models.Job{
+					ID:       1,
+					Attempts: 2,
+				})
+			},
+			wantErr: false,
+		},
+		{
+			name: "increment attempts on non-existent job",
+			id:   999,
+			setup: func(db *gorm.DB) {
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db, ctx := setupTestDB(t)
+			defer closeTestDB(db)
+			repo := postgres.NewJobRepository(db)
+
+			if tt.setup != nil {
+				tt.setup(db)
+			}
+
+			err := repo.IncrementAttempts(ctx, tt.id)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errContains)
+				return
+			}
+
+			require.NoError(t, err)
+
+			// Skip verification for non-existent job test
+			if tt.name == "increment attempts on non-existent job" {
+				return
+			}
+
+			var job models.Job
+			require.NoError(t, db.First(&job, tt.id).Error)
+
+			switch tt.name {
+			case "increment attempts multiple times":
+				assert.Equal(t, 3, job.Attempts)
+			case "successfully increment attempts":
+				assert.Equal(t, 1, job.Attempts)
+			}
+		})
+	}
+}
+
+func TestJobRepository_SaveResult(t *testing.T) {
+	tests := []struct {
+		name        string
+		id          uint
+		result      datatypes.JSON
+		errMsg      string
+		setup       func(db *gorm.DB)
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:   "successfully save result",
+			id:     1,
+			result: datatypes.JSON([]byte(`{"status":"ok"}`)),
+			errMsg: "",
+			setup: func(db *gorm.DB) {
+				db.Create(&models.Job{ID: 1})
+			},
+			wantErr: false,
+		},
+		{
+			name:   "db failure while saving result",
+			id:     1,
+			result: datatypes.JSON([]byte(`{"status":"failed"}`)),
+			errMsg: "error",
+			setup: func(db *gorm.DB) {
+				sqlDB, _ := db.DB()
+				sqlDB.Close()
+			},
+			wantErr:     true,
+			errContains: "save result",
+		},
+		{
+			name:   "save result with empty json",
+			id:     1,
+			result: datatypes.JSON([]byte(`{}`)),
+			errMsg: "",
+			setup: func(db *gorm.DB) {
+				db.Create(&models.Job{ID: 1})
+			},
+			wantErr: false,
+		},
+		{
+			name:   "save result with empty error message",
+			id:     1,
+			result: datatypes.JSON([]byte(`{"status":"completed"}`)),
+			errMsg: "",
+			setup: func(db *gorm.DB) {
+				db.Create(&models.Job{ID: 1})
+			},
+			wantErr: false,
+		},
+		{
+			name:   "save result with both empty",
+			id:     1,
+			result: datatypes.JSON([]byte(`{}`)),
+			errMsg: "",
+			setup: func(db *gorm.DB) {
+				db.Create(&models.Job{ID: 1})
+			},
+			wantErr: false,
+		},
+		{
+			name:   "save result with null json array",
+			id:     1,
+			result: datatypes.JSON([]byte(`[]`)),
+			errMsg: "test error",
+			setup: func(db *gorm.DB) {
+				db.Create(&models.Job{ID: 1})
+			},
+			wantErr: false,
+		},
+		{
+			name:   "save result with complex nested json",
+			id:     1,
+			result: datatypes.JSON([]byte(`{"data":{"nested":{"value":"test"}},"count":42}`)),
+			errMsg: "",
+			setup: func(db *gorm.DB) {
+				db.Create(&models.Job{ID: 1})
+			},
+			wantErr: false,
+		},
+		{
+			name:   "save result overwrites previous values",
+			id:     1,
+			result: datatypes.JSON([]byte(`{"new":"result"}`)),
+			errMsg: "new error",
+			setup: func(db *gorm.DB) {
+				db.Create(&models.Job{
+					ID:     1,
+					Result: datatypes.JSON([]byte(`{"old":"result"}`)),
+					Error:  "old error",
+				})
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db, ctx := setupTestDB(t)
+			defer closeTestDB(db)
+
+			repo := postgres.NewJobRepository(db)
+
+			if tt.setup != nil {
+				tt.setup(db)
+			}
+
+			err := repo.SaveResult(ctx, tt.id, tt.result, tt.errMsg)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errContains)
+				return
+			}
+
+			require.NoError(t, err)
+
+			var job models.Job
+			require.NoError(t, db.First(&job, tt.id).Error)
+			assert.JSONEq(t, string(tt.result), string(job.Result))
+			assert.Equal(t, tt.errMsg, job.Error)
+		})
+	}
+}
+
+func TestJobRepository_List(t *testing.T) {
+	tests := []struct {
+		name        string
+		queue       string
+		setup       func(db *gorm.DB)
+		wantCount   int
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:  "list jobs by queue",
+			queue: "email",
+			setup: func(db *gorm.DB) {
+				db.Create(&models.Job{ID: 1, Queue: "email"})
+				db.Create(&models.Job{ID: 2, Queue: "email"})
+				db.Create(&models.Job{ID: 3, Queue: "sms"})
+			},
+			wantCount: 2,
+			wantErr:   false,
+		},
+		{
+			name:  "db failure during list",
+			queue: "email",
+			setup: func(db *gorm.DB) {
+				sqlDB, _ := db.DB()
+				sqlDB.Close()
+			},
+			wantErr:     true,
+			errContains: "list jobs",
+		},
+		{
+			name:  "list jobs from empty queue",
+			queue: "nonexistent",
+			setup: func(db *gorm.DB) {
+				db.Create(&models.Job{ID: 1, Queue: "email"})
+				db.Create(&models.Job{ID: 2, Queue: "sms"})
+			},
+			wantCount: 0,
+			wantErr:   false,
+		},
+		{
+			name:  "list jobs with single queue",
+			queue: "sms",
+			setup: func(db *gorm.DB) {
+				db.Create(&models.Job{ID: 1, Queue: "email"})
+				db.Create(&models.Job{ID: 2, Queue: "sms"})
+				db.Create(&models.Job{ID: 3, Queue: "email"})
+			},
+			wantCount: 1,
+			wantErr:   false,
+		},
+		{
+			name:  "list jobs from empty database",
+			queue: "email",
+			setup: func(db *gorm.DB) {
+				// Empty database
+			},
+			wantCount: 0,
+			wantErr:   false,
+		},
+		{
+			name:  "list all jobs from queue with many entries",
+			queue: "reports",
+			setup: func(db *gorm.DB) {
+				for i := 1; i <= 10; i++ {
+					db.Create(&models.Job{ID: uint(i), Queue: "reports"})
+				}
+				db.Create(&models.Job{ID: 11, Queue: "email"})
+			},
+			wantCount: 10,
+			wantErr:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db, ctx := setupTestDB(t)
+			defer closeTestDB(db)
+
+			repo := postgres.NewJobRepository(db)
+
+			if tt.setup != nil {
+				tt.setup(db)
+			}
+
+			jobs, err := repo.List(ctx, tt.queue)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errContains)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Len(t, jobs, tt.wantCount)
 		})
 	}
 }

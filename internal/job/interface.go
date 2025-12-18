@@ -9,24 +9,27 @@ import (
 	"gorm.io/datatypes"
 )
 
+// JobRepoInterface defines the contract for job repository operations.
 type JobRepoInterface interface {
 	Create(ctx context.Context, job *models.Job) error
-	Get(ctx context.Context, id string) (*models.Job, error)
-	UpdateStatus(ctx context.Context, id string, status string) error
-	IncrementAttempts(ctx context.Context, id string) error
-	SaveResult(ctx context.Context, id string, result datatypes.JSON, err string) error
+	Get(ctx context.Context, id uint) (*models.Job, error)
+	UpdateStatus(ctx context.Context, id uint, status string) error
+	IncrementAttempts(ctx context.Context, id uint) error
+	SaveResult(ctx context.Context, id uint, result datatypes.JSON, err string) error
 	List(ctx context.Context, queue string) ([]models.Job, error)
 }
 
+// JobServiceInterface defines the contract for job business logic operations.
 type JobServiceInterface interface {
 	CreateJob(ctx context.Context, dto *dto.JobCreateDTO) error
-	GetJobByID(id string) (*models.Job, error)
-	UpdateStatus(id string, status string) error
-	IncrementAttempts(id string) error
-	SaveResult(id string, result datatypes.JSON, err string) error
-	ListJobs(queue string) ([]models.Job, error)
+	GetJobByID(ctx context.Context, id uint) (*models.Job, error)
+	UpdateStatus(ctx context.Context, id uint, status string) error
+	IncrementAttempts(ctx context.Context, id uint) error
+	SaveResult(ctx context.Context, id uint, result datatypes.JSON, err string) error
+	ListJobs(ctx context.Context, queue string) ([]models.Job, error)
 }
 
+// JobHandlerInterface defines the contract for HTTP request handlers.
 type JobHandlerInterface interface {
 	Create(c *gin.Context)
 	Get(c *gin.Context)

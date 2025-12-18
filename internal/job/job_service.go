@@ -76,26 +76,26 @@ func (s *JobService) CreateJob(ctx context.Context, dto *dto.JobCreateDTO) error
 }
 
 // TODO:
-func (s *JobService) GetJobByID(id string) (*models.Job, error) {
+func (s *JobService) GetJobByID(ctx context.Context, id uint) (*models.Job, error) {
 	return nil, nil
 }
 
 // TODO:
-func (s *JobService) UpdateStatus(id string, status string) error {
+func (s *JobService) UpdateStatus(ctx context.Context, id uint, status string) error {
 	return nil
 }
 
 // TODO:
-func (s *JobService) IncrementAttempts(id string) error {
+func (s *JobService) IncrementAttempts(ctx context.Context, id uint) error {
 	return nil
 }
 
 // TODO:
-func (s *JobService) SaveResult(id string, result datatypes.JSON, err string) error {
+func (s *JobService) SaveResult(ctx context.Context, id uint, result datatypes.JSON, err string) error {
 	return nil
 }
 
 // TODO:
-func (s *JobService) ListJobs(queue string) ([]models.Job, error) {
+func (s *JobService) ListJobs(ctx context.Context, queue string) ([]models.Job, error) {
 	return nil, nil
 }

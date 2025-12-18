@@ -17,26 +17,26 @@ func (m *JobRepoMock) Create(ctx context.Context, job *models.Job) error {
 	return args.Error(0)
 }
 
-func (m *JobRepoMock) Get(ctx context.Context, id string) (*models.Job, error) {
+func (m *JobRepoMock) Get(ctx context.Context, id uint) (*models.Job, error) {
 	args := m.Called(ctx, id)
 
 	job, _ := args.Get(0).(*models.Job)
 	return job, args.Error(1)
 }
 
-func (m *JobRepoMock) UpdateStatus(ctx context.Context, id string, status string) error {
+func (m *JobRepoMock) UpdateStatus(ctx context.Context, id uint, status string) error {
 	args := m.Called(ctx, id, status)
 	return args.Error(0)
 }
 
-func (m *JobRepoMock) IncrementAttempts(ctx context.Context, id string) error {
+func (m *JobRepoMock) IncrementAttempts(ctx context.Context, id uint) error {
 	args := m.Called(ctx, id)
 	return args.Error(0)
 }
 
 func (m *JobRepoMock) SaveResult(
 	ctx context.Context,
-	id string,
+	id uint,
 	result datatypes.JSON,
 	errMsg string,
 ) error {

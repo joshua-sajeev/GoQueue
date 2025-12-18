@@ -18,7 +18,7 @@ func (m *JobServiceMock) CreateJob(ctx context.Context, dto *dto.JobCreateDTO) e
 	return args.Error(0)
 }
 
-func (m *JobServiceMock) GetJobByID(id string) (*models.Job, error) {
+func (m *JobServiceMock) GetJobByID(ctx context.Context, id uint) (*models.Job, error) {
 	args := m.Called(id)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -26,22 +26,22 @@ func (m *JobServiceMock) GetJobByID(id string) (*models.Job, error) {
 	return args.Get(0).(*models.Job), args.Error(1)
 }
 
-func (m *JobServiceMock) UpdateStatus(id string, status string) error {
+func (m *JobServiceMock) UpdateStatus(ctx context.Context, id uint, status string) error {
 	args := m.Called(id, status)
 	return args.Error(0)
 }
 
-func (m *JobServiceMock) IncrementAttempts(id string) error {
+func (m *JobServiceMock) IncrementAttempts(ctx context.Context, id uint) error {
 	args := m.Called(id)
 	return args.Error(0)
 }
 
-func (m *JobServiceMock) SaveResult(id string, result datatypes.JSON, err string) error {
+func (m *JobServiceMock) SaveResult(ctx context.Context, id uint, result datatypes.JSON, err string) error {
 	args := m.Called(id, result, err)
 	return args.Error(0)
 }
 
-func (m *JobServiceMock) ListJobs(queue string) ([]models.Job, error) {
+func (m *JobServiceMock) ListJobs(ctx context.Context, queue string) ([]models.Job, error) {
 	args := m.Called(queue)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)

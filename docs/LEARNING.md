@@ -19,3 +19,20 @@ envProcess = func(ctx context.Context, i any, mus ...envconfig.Mutator) error {
 ## 2025-12-15
 ### Postgres Connection
 Postgres won't ask for a password when connecting locally inside the container, and Postgres because configured to trust local connections.
+
+
+## 2025-12-18
+### Marking Integration Tests
+
+To exclude integration tests during normal runs:
+
+```go
+//go:build integration
+// +build integration
+```
+
+* **Place at the top of the test file**, before `package`.
+* All tests in that file are treated as **integration tests**.
+* Run unit tests without them: `go test -tags=unit ./...`
+* Run integration tests explicitly: `go test -tags=integration ./...`
+---

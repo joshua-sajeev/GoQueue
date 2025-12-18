@@ -459,3 +459,50 @@ func TestConnectDB(t *testing.T) {
 		})
 	}
 }
+
+// setupTestDB returns a fresh DB connection and context with automatic cleanup
+// Each test gets its own connection to avoid connection pool issues
+func setupTestDB(t *testing.T) (*gorm.DB, context.Context) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancel)
+
+	testConfig := &postgres.Config{
+		User:       "testuser",
+		Password:   "testpass",
+		Host:       "localhost",
+		Port:       testPort,
+		Database:   "example",
+		MaxRetries: 3,
+		RetryDelay: 100 * time.Millisecond,
+		LogLevel:   logger.Silent,
+	}
+
+	db, err := postgres.ConnectDB(ctx, testConfig)
+	require.NoError(t, err)
+
+	// Clean up the jobs table at the start of each test
+	if err := db.Exec("DELETE FROM jobs").Error; err != nil {
+		t.Logf("Warning: Failed to clean jobs table: %v", err)
+	}
+
+	// Register cleanup
+	t.Cleanup(func() {
+		closeTestDB(db)
+	})
+
+	return db, ctx
+}
+
+// closeTestDB closes a DB connection
+func closeTestDB(db *gorm.DB) {
+	if db == nil {
+		return
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return
+	}
+	if sqlDB != nil {
+		sqlDB.Close()
+	}
+}

@@ -3,14 +3,17 @@ package job
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"slices"
+	"strings"
 
 	"github.com/joshu-sajeev/goqueue/common"
 	"github.com/joshu-sajeev/goqueue/internal/config"
 	"github.com/joshu-sajeev/goqueue/internal/dto"
 	"github.com/joshu-sajeev/goqueue/internal/models"
 	"gorm.io/datatypes"
+	"gorm.io/gorm"
 )
 
 type JobService struct {
@@ -28,6 +31,18 @@ var _ JobServiceInterface = (*JobService)(nil)
 // It returns a typed API error for validation failures and an
 // internal error for persistence failures.
 func (s *JobService) CreateJob(ctx context.Context, dto *dto.JobCreateDTO) error {
+
+	if err := ctx.Err(); err != nil {
+		switch err {
+		case context.Canceled:
+			return common.Errf(http.StatusRequestTimeout, "request was canceled")
+		case context.DeadlineExceeded:
+			return common.Errf(http.StatusRequestTimeout, "request timeout")
+		default:
+			return common.Errf(http.StatusInternalServerError, "request failed")
+		}
+	}
+
 	if !json.Valid(dto.Payload) {
 		return common.Errf(http.StatusBadRequest, "payload must be valid JSON")
 	}
@@ -69,7 +84,18 @@ func (s *JobService) CreateJob(ctx context.Context, dto *dto.JobCreateDTO) error
 	}
 
 	if err := s.repo.Create(ctx, &job); err != nil {
-		return common.Errf(http.StatusInternalServerError, "failed to add job to database: %v", err)
+		if errors.Is(err, context.Canceled) {
+			return common.Errf(http.StatusRequestTimeout, "request was canceled")
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			return common.Errf(http.StatusRequestTimeout, "request timeout")
+		}
+
+		return common.Errf(
+			http.StatusInternalServerError,
+			"failed to add job to database: %v",
+			err,
+		)
 	}
 
 	return nil

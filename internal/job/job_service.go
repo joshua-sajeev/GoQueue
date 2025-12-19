@@ -101,9 +101,42 @@ func (s *JobService) CreateJob(ctx context.Context, dto *dto.JobCreateDTO) error
 	return nil
 }
 
-// TODO:
+// GetJobByID retrieves a job by its ID from the repository.
+// It maps repository errors to appropriate API errors
+// (e.g., not found, timeout, or internal failure).
 func (s *JobService) GetJobByID(ctx context.Context, id uint) (*models.Job, error) {
-	return nil, nil
+	if err := ctx.Err(); err != nil {
+		return nil, common.Errf(
+			http.StatusRequestTimeout,
+			"request timed out",
+		)
+	}
+
+	job, err := s.repo.Get(ctx, id)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) ||
+			errors.Is(err, context.Canceled) {
+			return nil, common.Errf(
+				http.StatusRequestTimeout,
+				"request timed out",
+			)
+		}
+
+		if errors.Is(err, gorm.ErrRecordNotFound) ||
+			strings.Contains(err.Error(), "job not found") {
+			return nil, common.Errf(
+				http.StatusNotFound,
+				"job not found",
+			)
+		}
+
+		return nil, common.Errf(
+			http.StatusInternalServerError,
+			"failed to get job",
+		)
+	}
+
+	return job, nil
 }
 
 // TODO:

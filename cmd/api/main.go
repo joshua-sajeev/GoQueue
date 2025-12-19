@@ -35,7 +35,7 @@ func main() {
 	jobHandler := job.NewJobHandler(jobService)
 	r := gin.Default()
 
-	r.Use(middleware.ErrorHandler())
+	r.Use(middleware.TimeoutMiddleware(5*time.Second), middleware.ErrorHandler())
 
 	r.POST("/", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})

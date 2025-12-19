@@ -139,22 +139,125 @@ func (s *JobService) GetJobByID(ctx context.Context, id uint) (*models.Job, erro
 	return job, nil
 }
 
-// TODO:
+// UpdateStatus updates the status of a job identified by its ID.
+// It validates request context, delegates the update to the repository,
+// and maps repository or context errors to appropriate API errors
+// (e.g., timeout or internal failure).
 func (s *JobService) UpdateStatus(ctx context.Context, id uint, status string) error {
+	if err := ctx.Err(); err != nil {
+		return common.Errf(
+			http.StatusRequestTimeout,
+			"request timed out",
+		)
+	}
+
+	if err := s.repo.UpdateStatus(ctx, id, status); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) ||
+			errors.Is(err, context.Canceled) {
+			return common.Errf(
+				http.StatusRequestTimeout,
+				"request timed out",
+			)
+		}
+
+		return common.Errf(
+			http.StatusInternalServerError,
+			"failed to update job status",
+		)
+	}
+
 	return nil
 }
 
-// TODO:
+// IncrementAttempts increments the attempt counter for a job by one.
+// It ensures request context validity before execution and maps
+// repository or context errors to appropriate API errors.
 func (s *JobService) IncrementAttempts(ctx context.Context, id uint) error {
+	if err := ctx.Err(); err != nil {
+		return common.Errf(
+			http.StatusRequestTimeout,
+			"request timed out",
+		)
+	}
+
+	if err := s.repo.IncrementAttempts(ctx, id); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) ||
+			errors.Is(err, context.Canceled) {
+			return common.Errf(
+				http.StatusRequestTimeout,
+				"request timed out",
+			)
+		}
+
+		return common.Errf(
+			http.StatusInternalServerError,
+			"failed to increment job attempts",
+		)
+	}
+
 	return nil
 }
 
-// TODO:
-func (s *JobService) SaveResult(ctx context.Context, id uint, result datatypes.JSON, err string) error {
+// SaveResult persists the execution result and error message for a job.
+// It validates request context, delegates persistence to the repository,
+// and maps repository errors to appropriate API errors.
+func (s *JobService) SaveResult(
+	ctx context.Context,
+	id uint,
+	result datatypes.JSON,
+	errMsg string,
+) error {
+	if err := ctx.Err(); err != nil {
+		return common.Errf(
+			http.StatusRequestTimeout,
+			"request timed out",
+		)
+	}
+
+	if err := s.repo.SaveResult(ctx, id, result, errMsg); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) ||
+			errors.Is(err, context.Canceled) {
+			return common.Errf(
+				http.StatusRequestTimeout,
+				"request timed out",
+			)
+		}
+
+		return common.Errf(
+			http.StatusInternalServerError,
+			"failed to save job result",
+		)
+	}
+
 	return nil
 }
 
-// TODO:
+// ListJobs retrieves all jobs belonging to a specific queue.
+// It validates request context, fetches jobs from the repository,
+// and maps repository or context errors to appropriate API errors.
 func (s *JobService) ListJobs(ctx context.Context, queue string) ([]models.Job, error) {
-	return nil, nil
+	if err := ctx.Err(); err != nil {
+		return nil, common.Errf(
+			http.StatusRequestTimeout,
+			"request timed out",
+		)
+	}
+
+	jobs, err := s.repo.List(ctx, queue)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) ||
+			errors.Is(err, context.Canceled) {
+			return nil, common.Errf(
+				http.StatusRequestTimeout,
+				"request timed out",
+			)
+		}
+
+		return nil, common.Errf(
+			http.StatusInternalServerError,
+			"failed to list jobs",
+		)
+	}
+
+	return jobs, nil
 }

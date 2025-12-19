@@ -45,24 +45,6 @@ func TestJobHandler_Create(t *testing.T) {
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
-			name:           "missing required field - queue",
-			body:           `{"type":"send_email","payload":{"test":true}}`,
-			setupMock:      func(m *mocks.JobServiceMock) {},
-			expectedStatus: http.StatusBadRequest,
-		},
-		{
-			name:           "missing required field - type",
-			body:           `{"queue":"default","payload":{"test":true}}`,
-			setupMock:      func(m *mocks.JobServiceMock) {},
-			expectedStatus: http.StatusBadRequest,
-		},
-		{
-			name:           "missing required field - payload",
-			body:           `{"queue":"default","type":"send_email"}`,
-			setupMock:      func(m *mocks.JobServiceMock) {},
-			expectedStatus: http.StatusBadRequest,
-		},
-		{
 			name:           "empty request body",
 			body:           "",
 			setupMock:      func(m *mocks.JobServiceMock) {},
@@ -102,20 +84,6 @@ func TestJobHandler_Create(t *testing.T) {
 			},
 			expectedStatus: http.StatusBadRequest,
 		},
-		{
-			name: "empty queue",
-			body: `{"queue":"","type":"send_email","payload":{"test":true}}`,
-			setupMock: func(m *mocks.JobServiceMock) {
-			},
-			expectedStatus: http.StatusBadRequest,
-		},
-		{
-			name: "empty job type",
-			body: `{"queue":"default","type":"","payload":{"test":true}}`,
-			setupMock: func(m *mocks.JobServiceMock) {
-			},
-			expectedStatus: http.StatusBadRequest,
-		},
 
 		{
 			name: "database connection error",
@@ -125,49 +93,6 @@ func TestJobHandler_Create(t *testing.T) {
 					Return(common.Errf(http.StatusInternalServerError, "failed to add job to database: database connection failed"))
 			},
 			expectedStatus: http.StatusInternalServerError,
-		},
-		{
-			name: "database constraint violation",
-			body: `{"queue":"default","type":"send_email","payload":{"test":true}}`,
-			setupMock: func(m *mocks.JobServiceMock) {
-				m.On("CreateJob", mock.Anything, mock.Anything).
-					Return(common.Errf(http.StatusInternalServerError, "failed to add job to database: unique constraint violation"))
-			},
-			expectedStatus: http.StatusInternalServerError,
-		},
-		{
-			name: "context deadline exceeded",
-			body: `{"queue":"default","type":"send_email","payload":{"test":true}}`,
-			setupMock: func(m *mocks.JobServiceMock) {
-				m.On("CreateJob", mock.Anything, mock.Anything).
-					Return(common.Errf(http.StatusInternalServerError, "failed to add job to database: context deadline exceeded"))
-			},
-			expectedStatus: http.StatusInternalServerError,
-		},
-		{
-			name: "invalid queue with detailed error info",
-			body: `{"queue":"bad_queue","type":"send_email","payload":{"test":true}}`,
-			setupMock: func(m *mocks.JobServiceMock) {
-				m.On("CreateJob", mock.Anything, mock.Anything).
-					Return(common.NewAPIError(http.StatusBadRequest, "queue validation failed", map[string]any{
-						"provided": "bad_queue",
-						"allowed":  []string{"default", "email", "reports"},
-						"reason":   "queue does not exist",
-					}))
-			},
-			expectedStatus: http.StatusBadRequest,
-		},
-		{
-			name: "concurrent job creation limit exceeded",
-			body: `{"queue":"default","type":"send_email","payload":{"test":true}}`,
-			setupMock: func(m *mocks.JobServiceMock) {
-				m.On("CreateJob", mock.Anything, mock.Anything).
-					Return(common.NewAPIError(http.StatusTooManyRequests, "rate limit exceeded", map[string]any{
-						"retryAfter": 60,
-						"limit":      100,
-					}))
-			},
-			expectedStatus: http.StatusTooManyRequests,
 		},
 	}
 

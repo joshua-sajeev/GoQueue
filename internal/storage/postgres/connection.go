@@ -164,10 +164,10 @@ func simplifyDBError(err error) string {
 	switch {
 	case strings.Contains(msg, "password authentication failed"):
 		return "invalid database credentials"
-	case strings.Contains(msg, "connect"):
-		return "cannot reach database server"
 	case strings.Contains(msg, "timeout"):
 		return "database connection timed out"
+	case strings.Contains(msg, "connect"):
+		return "cannot reach database server"
 	case strings.Contains(msg, "SASL"):
 		return "authentication error"
 	}

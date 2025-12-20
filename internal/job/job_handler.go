@@ -25,24 +25,15 @@ var _ JobHandlerInterface = (*JobHandler)(nil)
 // to the JobService, and returns HTTP 201 on successful creation.
 func (h *JobHandler) Create(c *gin.Context) {
 	var req dto.JobCreateDTO
+
 	if !middleware.Bind(c, &req) {
-		if len(c.Errors) > 0 {
-			err := c.Errors[0]
-			if apiErr, ok := err.Err.(common.APIError); ok {
-				c.JSON(apiErr.Status, apiErr)
-			} else {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			}
-		}
+		c.Abort()
 		return
 	}
 
 	if err := h.service.CreateJob(c.Request.Context(), &req); err != nil {
-		if apiErr, ok := err.(common.APIError); ok {
-			c.JSON(apiErr.Status, apiErr)
-		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		}
+		c.Error(err)
+		c.Abort()
 		return
 	}
 

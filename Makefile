@@ -1,8 +1,10 @@
-.PHONY: help compose-up compose-down compose-logs \
+.PHONY: help compose-up compose-up-detach compose-down compose-logs \
         migrate-status migrate-up migrate-down migrate-reset \
-        migrate-create db-connect
+        migrate-create db-connect compose-reset-db \
+        test test-verbose bench bench-integration
 
 CONTAINER_NAME=goqueue_container
+POSTGRES_CONTAINER=postgres_container
 MIGRATIONS_DIR=./migrations
 ENV_FILE=deployments/.env
 
@@ -15,72 +17,87 @@ DATABASE_URL=postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$
 
 help:
 	@echo "Available commands:"
-	@echo "  make compose-up          - Start Docker containers"
-	@echo "  make compose-down        - Stop Docker containers"
-	@echo "  make compose-logs        - View container logs"
-	@echo "  make migrate-status      - Check migration status"
-	@echo "  make migrate-up          - Run pending migrations"
-	@echo "  make migrate-down        - Rollback last migration"
-	@echo "  make migrate-reset       - Rollback all migrations"
-	@echo "  make migrate-create NAME=table_name - Create new migration"
-	@echo "  make db-connect          - Connect to PostgreSQL shell"
-	@echo "  make compose-reset-db    - Delete Postgres volume (ALL DATA LOST)"
+	@echo ""
+	@echo "Docker:"
+	@echo "  make compose-up              - Start Docker containers"
+	@echo "  make compose-up-detach       - Start Docker containers in background"
+	@echo "  make compose-down            - Stop Docker containers"
+	@echo "  make compose-logs            - View container logs"
+	@echo "  make compose-reset-db        - Delete Postgres volume (ALL DATA LOST)"
+	@echo ""
+	@echo "Database / Migrations:"
+	@echo "  make migrate-status          - Check migration status"
+	@echo "  make migrate-up              - Run pending migrations"
+	@echo "  make migrate-down            - Rollback last migration"
+	@echo "  make migrate-reset           - Rollback all migrations"
+	@echo "  make migrate-create NAME=x   - Create new migration"
+	@echo "  make db-connect              - Connect to PostgreSQL shell"
+	@echo ""
+	@echo "Testing / Benchmarks:"
+	@echo "  make test                    - Run all tests"
+	@echo "  make test-verbose            - Run tests with verbose output"
+	@echo "  make bench                   - Run all benchmarks"
 
-## Docker Compose Commands
+## ----------------------
+## Docker Compose
+## ----------------------
+
 compose-up:
-	@echo "Starting Docker containers..."
 	cd deployments && docker-compose -f docker-compose.dev.yml up
-	@echo "Containers started. Use 'make compose-logs' to view logs"
 
 compose-up-detach:
-	@echo "Starting Docker containers..."
 	cd deployments && docker-compose -f docker-compose.dev.yml up -d
-	@echo "Containers started. Use 'make compose-logs' to view logs"
 
 compose-down:
-	@echo "Stopping Docker containers..."
 	cd deployments && docker-compose -f docker-compose.dev.yml down
-	@echo "Containers stopped"
 
 compose-logs:
 	cd deployments && docker-compose -f docker-compose.dev.yml logs -f
 
-## Migration Commands
+compose-reset-db:
+	@echo "⚠️  WARNING: This will DELETE the PostgreSQL volume and ALL data"
+	cd deployments && docker-compose -f docker-compose.dev.yml down -v
+	@echo "PostgreSQL volume deleted."
+
+## ----------------------
+## Migrations
+## ----------------------
+
 migrate-status:
-	@echo "Migration status:"
 	docker exec $(CONTAINER_NAME) goose -dir $(MIGRATIONS_DIR) postgres "$(DATABASE_URL)" status
 
 migrate-up:
-	@echo "Running pending migrations..."
 	docker exec $(CONTAINER_NAME) goose -dir $(MIGRATIONS_DIR) postgres "$(DATABASE_URL)" up
-	@echo "Migrations completed"
 
 migrate-down:
-	@echo "Rolling back last migration..."
 	docker exec $(CONTAINER_NAME) goose -dir $(MIGRATIONS_DIR) postgres "$(DATABASE_URL)" down
-	@echo "Rollback completed"
 
 migrate-reset:
-	@echo "Resetting database (rolling back all migrations)..."
 	docker exec $(CONTAINER_NAME) goose -dir $(MIGRATIONS_DIR) postgres "$(DATABASE_URL)" reset
-	@echo "Database reset completed"
 
 migrate-create:
 	@if [ -z "$(NAME)" ]; then \
 		echo "Error: NAME not specified. Usage: make migrate-create NAME=table_name"; \
 		exit 1; \
 	fi
-	@echo "Creating migration: $(NAME)"
 	docker exec $(CONTAINER_NAME) goose -dir $(MIGRATIONS_DIR) create $(NAME) sql
-	@echo "Migration created in $(MIGRATIONS_DIR)"
 
-## Database Commands
+## ----------------------
+## Database
+## ----------------------
+
 db-connect:
-	docker exec -it postgres_container psql -U postgres -d goqueue
+	docker exec -it $(POSTGRES_CONTAINER) psql -U $(POSTGRES_USER) -d $(POSTGRES_DB)
 
-## Delete postgres volume
-compose-reset-db:
-	@echo "⚠️  WARNING: This will DELETE the PostgreSQL volume and ALL data"
-	@echo "Stopping containers..."
-	cd deployments && docker-compose -f docker-compose.dev.yml down -v
-	@echo "PostgreSQL volume deleted. Run 'make compose-up' to recreate."
+## ----------------------
+## Testing & Benchmarks
+## ----------------------
+
+test:
+	go test ./...
+
+test-verbose:
+	go test -v ./...
+
+bench:
+	go test -bench=. -benchmem ./...

@@ -2,13 +2,16 @@ package job
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joshu-sajeev/goqueue/common"
 	"github.com/joshu-sajeev/goqueue/internal/mocks"
+	"github.com/joshu-sajeev/goqueue/middleware"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -19,6 +22,7 @@ func TestJobHandler_Create(t *testing.T) {
 		name           string
 		body           string
 		setupMock      func(*mocks.JobServiceMock)
+		setupContext   func(*gin.Context)
 		expectedStatus int
 	}{
 		{
@@ -169,6 +173,103 @@ func TestJobHandler_Create(t *testing.T) {
 			},
 			expectedStatus: http.StatusTooManyRequests,
 		},
+
+		// Context-related test cases
+		{
+			name: "context canceled before service call",
+			body: `{"queue":"default","type":"send_email","payload":{"test":true}}`,
+			setupMock: func(m *mocks.JobServiceMock) {
+				m.On("CreateJob", mock.Anything, mock.Anything).
+					Return(common.Errf(http.StatusRequestTimeout, "request was canceled"))
+			},
+			setupContext: func(c *gin.Context) {
+				ctx, cancel := context.WithCancel(c.Request.Context())
+				cancel()
+				c.Request = c.Request.WithContext(ctx)
+			},
+			expectedStatus: http.StatusRequestTimeout,
+		},
+		{
+			name: "context deadline exceeded in service layer",
+			body: `{"queue":"default","type":"send_email","payload":{"test":true}}`,
+			setupMock: func(m *mocks.JobServiceMock) {
+				m.On("CreateJob", mock.Anything, mock.Anything).
+					Return(common.Errf(http.StatusRequestTimeout, "request timeout"))
+			},
+			setupContext: func(c *gin.Context) {
+				ctx, cancel := context.WithTimeout(c.Request.Context(), 1*time.Nanosecond)
+				defer cancel()
+				time.Sleep(2 * time.Millisecond)
+				c.Request = c.Request.WithContext(ctx)
+			},
+			expectedStatus: http.StatusRequestTimeout,
+		},
+		{
+			name: "context timeout with valid job data",
+			body: `{"queue":"default","type":"send_email","payload":{"email":"test@example.com"},"maxRetries":3}`,
+			setupMock: func(m *mocks.JobServiceMock) {
+				m.On("CreateJob", mock.Anything, mock.Anything).
+					Run(func(args mock.Arguments) {
+						time.Sleep(10 * time.Millisecond)
+					}).
+					Return(common.Errf(http.StatusRequestTimeout, "request timeout"))
+			},
+			setupContext: func(c *gin.Context) {
+				ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Millisecond)
+				defer cancel()
+				c.Request = c.Request.WithContext(ctx)
+			},
+			expectedStatus: http.StatusRequestTimeout,
+		},
+		{
+			name: "context canceled after validation but before database insert",
+			body: `{"queue":"default","type":"send_email","payload":{"test":true}}`,
+			setupMock: func(m *mocks.JobServiceMock) {
+				m.On("CreateJob", mock.Anything, mock.Anything).
+					Return(common.Errf(http.StatusRequestTimeout, "request was canceled"))
+			},
+			expectedStatus: http.StatusRequestTimeout,
+		},
+		{
+			name: "parent context canceled propagates to service",
+			body: `{"queue":"default","type":"send_email","payload":{"test":true}}`,
+			setupMock: func(m *mocks.JobServiceMock) {
+				m.On("CreateJob", mock.Anything, mock.Anything).
+					Return(common.Errf(http.StatusRequestTimeout, "request was canceled"))
+			},
+			setupContext: func(c *gin.Context) {
+				parentCtx, parentCancel := context.WithCancel(context.Background())
+				childCtx, childCancel := context.WithCancel(parentCtx)
+				defer childCancel()
+				parentCancel()
+				c.Request = c.Request.WithContext(childCtx)
+			},
+			expectedStatus: http.StatusRequestTimeout,
+		},
+		{
+			name: "context with very short deadline",
+			body: `{"queue":"default","type":"send_email","payload":{"test":true}}`,
+			setupMock: func(m *mocks.JobServiceMock) {
+				m.On("CreateJob", mock.Anything, mock.Anything).
+					Return(common.Errf(http.StatusRequestTimeout, "request timeout"))
+			},
+			setupContext: func(c *gin.Context) {
+				ctx, cancel := context.WithTimeout(c.Request.Context(), 1*time.Microsecond)
+				defer cancel()
+				time.Sleep(1 * time.Millisecond)
+				c.Request = c.Request.WithContext(ctx)
+			},
+			expectedStatus: http.StatusRequestTimeout,
+		},
+		{
+			name: "context error with generic failure",
+			body: `{"queue":"default","type":"send_email","payload":{"test":true}}`,
+			setupMock: func(m *mocks.JobServiceMock) {
+				m.On("CreateJob", mock.Anything, mock.Anything).
+					Return(common.Errf(http.StatusInternalServerError, "request failed"))
+			},
+			expectedStatus: http.StatusInternalServerError,
+		},
 	}
 
 	for _, tt := range tests {
@@ -189,8 +290,16 @@ func TestJobHandler_Create(t *testing.T) {
 			c, _ := gin.CreateTestContext(w)
 			c.Request = req
 
+			if tt.setupContext != nil {
+				tt.setupContext(c)
+			}
+
+			r := gin.New()
+			r.Use(middleware.TimeoutMiddleware(5*time.Second), middleware.ErrorHandler())
 			handler := NewJobHandler(mockService)
-			handler.Create(c)
+			r.POST("/jobs", handler.Create)
+
+			r.ServeHTTP(w, req)
 
 			assert.Equal(t, tt.expectedStatus, w.Code, "Status code mismatch for test: %s", tt.name)
 			mockService.AssertExpectations(t)

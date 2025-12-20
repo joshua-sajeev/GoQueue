@@ -20,7 +20,7 @@ func Bind[T any](c *gin.Context, dest *T) bool {
 		c.Error(common.APIError{
 			Status:  http.StatusBadRequest,
 			Message: "validation failed",
-			Fields:  formatValidationErrors(err),
+			Fields:  FormatValidationErrors(err),
 		})
 		return false
 	}
@@ -28,7 +28,7 @@ func Bind[T any](c *gin.Context, dest *T) bool {
 	return true
 }
 
-func formatValidationErrors(err error) map[string]any {
+func FormatValidationErrors(err error) map[string]any {
 	errors := map[string]any{}
 	for _, e := range err.(validator.ValidationErrors) {
 		errors[e.Field()] = "failed " + e.Tag()

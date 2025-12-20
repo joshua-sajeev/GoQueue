@@ -2,8 +2,10 @@ package job
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/joshu-sajeev/goqueue/common"
 	"github.com/joshu-sajeev/goqueue/internal/dto"
 	"github.com/joshu-sajeev/goqueue/middleware"
 )
@@ -39,8 +41,23 @@ func (h *JobHandler) Create(c *gin.Context) {
 	c.JSON(http.StatusCreated, req)
 }
 
-// TODO:
-func (h *JobHandler) Get(c *gin.Context) {}
+// Get handles HTTP requests for getting a job based on an id.
+func (h *JobHandler) Get(c *gin.Context) {
+
+	id, err := strconv.ParseUint(c.Param("id"), 10, 0)
+	if err != nil || id < 1 {
+		c.JSON(http.StatusBadRequest, common.APIError{Message: "Invalid ID"})
+		return
+	}
+	resp, err := h.service.GetJobByID(c.Request.Context(), uint(id))
+
+	if err != nil {
+		c.JSON(http.StatusNotFound, common.APIError{Message: "Job not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
 
 // TODO:
 func (h *JobHandler) Update(c *gin.Context) {}

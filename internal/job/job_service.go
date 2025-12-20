@@ -30,7 +30,6 @@ var _ JobServiceInterface = (*JobService)(nil)
 // constructs a Job model, and persists it using the repository.
 // It returns a typed API error for validation failures and an
 // internal error for persistence failures.
-// TODO: validate payload
 func (s *JobService) CreateJob(ctx context.Context, dto *dto.JobCreateDTO) error {
 
 	if err := ctx.Err(); err != nil {
@@ -120,9 +119,9 @@ func (s *JobService) CreateJob(ctx context.Context, dto *dto.JobCreateDTO) error
 // GetJobByID retrieves a job by its ID from the repository.
 // It maps repository errors to appropriate API errors
 // (e.g., not found, timeout, or internal failure).
-func (s *JobService) GetJobByID(ctx context.Context, id uint) (*models.Job, error) {
+func (s *JobService) GetJobByID(ctx context.Context, id uint) (*dto.JobResponseDTO, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, common.Errf(
+		return &dto.JobResponseDTO{}, common.Errf(
 			http.StatusRequestTimeout,
 			"request timed out",
 		)
@@ -132,7 +131,7 @@ func (s *JobService) GetJobByID(ctx context.Context, id uint) (*models.Job, erro
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) ||
 			errors.Is(err, context.Canceled) {
-			return nil, common.Errf(
+			return &dto.JobResponseDTO{}, common.Errf(
 				http.StatusRequestTimeout,
 				"request timed out",
 			)
@@ -140,19 +139,31 @@ func (s *JobService) GetJobByID(ctx context.Context, id uint) (*models.Job, erro
 
 		if errors.Is(err, gorm.ErrRecordNotFound) ||
 			strings.Contains(err.Error(), "job not found") {
-			return nil, common.Errf(
+			return &dto.JobResponseDTO{}, common.Errf(
 				http.StatusNotFound,
 				"job not found",
 			)
 		}
 
-		return nil, common.Errf(
+		return &dto.JobResponseDTO{}, common.Errf(
 			http.StatusInternalServerError,
 			"failed to get job",
 		)
 	}
 
-	return job, nil
+	return &dto.JobResponseDTO{
+		ID:         job.ID,
+		Queue:      job.Queue,
+		Type:       job.Type,
+		Payload:    json.RawMessage(job.Payload),
+		Status:     job.Status,
+		Attempts:   job.Attempts,
+		MaxRetries: job.MaxRetries,
+		Result:     json.RawMessage(job.Result),
+		Error:      job.Error,
+		CreatedAt:  job.CreatedAt,
+		UpdatedAt:  job.UpdatedAt,
+	}, nil
 }
 
 // UpdateStatus updates the status of a job identified by its ID.
@@ -251,7 +262,7 @@ func (s *JobService) SaveResult(
 // ListJobs retrieves all jobs belonging to a specific queue.
 // It validates request context, fetches jobs from the repository,
 // and maps repository or context errors to appropriate API errors.
-func (s *JobService) ListJobs(ctx context.Context, queue string) ([]models.Job, error) {
+func (s *JobService) ListJobs(ctx context.Context, queue string) ([]dto.JobResponseDTO, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, common.Errf(
 			http.StatusRequestTimeout,
@@ -275,7 +286,24 @@ func (s *JobService) ListJobs(ctx context.Context, queue string) ([]models.Job, 
 		)
 	}
 
-	return jobs, nil
+	dtos := make([]dto.JobResponseDTO, len(jobs))
+	for i, job := range jobs {
+		dtos[i] = dto.JobResponseDTO{
+			ID:         job.ID,
+			Queue:      job.Queue,
+			Type:       job.Type,
+			Payload:    json.RawMessage(job.Payload),
+			Status:     job.Status,
+			Attempts:   job.Attempts,
+			MaxRetries: job.MaxRetries,
+			Result:     json.RawMessage(job.Result),
+			Error:      job.Error,
+			CreatedAt:  job.CreatedAt,
+			UpdatedAt:  job.UpdatedAt,
+		}
+	}
+
+	return dtos, nil
 }
 
 func (s *JobService) validateSendEmailPayload(raw json.RawMessage) error {

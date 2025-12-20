@@ -22,11 +22,11 @@ type JobRepoInterface interface {
 // JobServiceInterface defines the contract for job business logic operations.
 type JobServiceInterface interface {
 	CreateJob(ctx context.Context, dto *dto.JobCreateDTO) error
-	GetJobByID(ctx context.Context, id uint) (*models.Job, error)
+	GetJobByID(ctx context.Context, id uint) (*dto.JobResponseDTO, error)
 	UpdateStatus(ctx context.Context, id uint, status string) error
 	IncrementAttempts(ctx context.Context, id uint) error
 	SaveResult(ctx context.Context, id uint, result datatypes.JSON, err string) error
-	ListJobs(ctx context.Context, queue string) ([]models.Job, error)
+	ListJobs(ctx context.Context, queue string) ([]dto.JobResponseDTO, error)
 }
 
 // JobHandlerInterface defines the contract for HTTP request handlers.

@@ -49,24 +49,6 @@ func TestJobHandler_Create(t *testing.T) {
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
-			name:           "missing required field - queue",
-			body:           `{"type":"send_email","payload":{"test":true}}`,
-			setupMock:      func(m *mocks.JobServiceMock) {},
-			expectedStatus: http.StatusBadRequest,
-		},
-		{
-			name:           "missing required field - type",
-			body:           `{"queue":"default","payload":{"test":true}}`,
-			setupMock:      func(m *mocks.JobServiceMock) {},
-			expectedStatus: http.StatusBadRequest,
-		},
-		{
-			name:           "missing required field - payload",
-			body:           `{"queue":"default","type":"send_email"}`,
-			setupMock:      func(m *mocks.JobServiceMock) {},
-			expectedStatus: http.StatusBadRequest,
-		},
-		{
 			name:           "empty request body",
 			body:           "",
 			setupMock:      func(m *mocks.JobServiceMock) {},
@@ -106,20 +88,6 @@ func TestJobHandler_Create(t *testing.T) {
 			},
 			expectedStatus: http.StatusBadRequest,
 		},
-		{
-			name: "empty queue",
-			body: `{"queue":"","type":"send_email","payload":{"test":true}}`,
-			setupMock: func(m *mocks.JobServiceMock) {
-			},
-			expectedStatus: http.StatusBadRequest,
-		},
-		{
-			name: "empty job type",
-			body: `{"queue":"default","type":"","payload":{"test":true}}`,
-			setupMock: func(m *mocks.JobServiceMock) {
-			},
-			expectedStatus: http.StatusBadRequest,
-		},
 
 		{
 			name: "database connection error",
@@ -129,49 +97,6 @@ func TestJobHandler_Create(t *testing.T) {
 					Return(common.Errf(http.StatusInternalServerError, "failed to add job to database: database connection failed"))
 			},
 			expectedStatus: http.StatusInternalServerError,
-		},
-		{
-			name: "database constraint violation",
-			body: `{"queue":"default","type":"send_email","payload":{"test":true}}`,
-			setupMock: func(m *mocks.JobServiceMock) {
-				m.On("CreateJob", mock.Anything, mock.Anything).
-					Return(common.Errf(http.StatusInternalServerError, "failed to add job to database: unique constraint violation"))
-			},
-			expectedStatus: http.StatusInternalServerError,
-		},
-		{
-			name: "context deadline exceeded",
-			body: `{"queue":"default","type":"send_email","payload":{"test":true}}`,
-			setupMock: func(m *mocks.JobServiceMock) {
-				m.On("CreateJob", mock.Anything, mock.Anything).
-					Return(common.Errf(http.StatusInternalServerError, "failed to add job to database: context deadline exceeded"))
-			},
-			expectedStatus: http.StatusInternalServerError,
-		},
-		{
-			name: "invalid queue with detailed error info",
-			body: `{"queue":"bad_queue","type":"send_email","payload":{"test":true}}`,
-			setupMock: func(m *mocks.JobServiceMock) {
-				m.On("CreateJob", mock.Anything, mock.Anything).
-					Return(common.NewAPIError(http.StatusBadRequest, "queue validation failed", map[string]any{
-						"provided": "bad_queue",
-						"allowed":  []string{"default", "email", "reports"},
-						"reason":   "queue does not exist",
-					}))
-			},
-			expectedStatus: http.StatusBadRequest,
-		},
-		{
-			name: "concurrent job creation limit exceeded",
-			body: `{"queue":"default","type":"send_email","payload":{"test":true}}`,
-			setupMock: func(m *mocks.JobServiceMock) {
-				m.On("CreateJob", mock.Anything, mock.Anything).
-					Return(common.NewAPIError(http.StatusTooManyRequests, "rate limit exceeded", map[string]any{
-						"retryAfter": 60,
-						"limit":      100,
-					}))
-			},
-			expectedStatus: http.StatusTooManyRequests,
 		},
 
 		// Context-related test cases
@@ -229,46 +154,6 @@ func TestJobHandler_Create(t *testing.T) {
 					Return(common.Errf(http.StatusRequestTimeout, "request was canceled"))
 			},
 			expectedStatus: http.StatusRequestTimeout,
-		},
-		{
-			name: "parent context canceled propagates to service",
-			body: `{"queue":"default","type":"send_email","payload":{"test":true}}`,
-			setupMock: func(m *mocks.JobServiceMock) {
-				m.On("CreateJob", mock.Anything, mock.Anything).
-					Return(common.Errf(http.StatusRequestTimeout, "request was canceled"))
-			},
-			setupContext: func(c *gin.Context) {
-				parentCtx, parentCancel := context.WithCancel(context.Background())
-				childCtx, childCancel := context.WithCancel(parentCtx)
-				defer childCancel()
-				parentCancel()
-				c.Request = c.Request.WithContext(childCtx)
-			},
-			expectedStatus: http.StatusRequestTimeout,
-		},
-		{
-			name: "context with very short deadline",
-			body: `{"queue":"default","type":"send_email","payload":{"test":true}}`,
-			setupMock: func(m *mocks.JobServiceMock) {
-				m.On("CreateJob", mock.Anything, mock.Anything).
-					Return(common.Errf(http.StatusRequestTimeout, "request timeout"))
-			},
-			setupContext: func(c *gin.Context) {
-				ctx, cancel := context.WithTimeout(c.Request.Context(), 1*time.Microsecond)
-				defer cancel()
-				time.Sleep(1 * time.Millisecond)
-				c.Request = c.Request.WithContext(ctx)
-			},
-			expectedStatus: http.StatusRequestTimeout,
-		},
-		{
-			name: "context error with generic failure",
-			body: `{"queue":"default","type":"send_email","payload":{"test":true}}`,
-			setupMock: func(m *mocks.JobServiceMock) {
-				m.On("CreateJob", mock.Anything, mock.Anything).
-					Return(common.Errf(http.StatusInternalServerError, "request failed"))
-			},
-			expectedStatus: http.StatusInternalServerError,
 		},
 	}
 

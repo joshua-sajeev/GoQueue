@@ -1,252 +1,288 @@
 # GoQueue Roadmap
 
-**Goal:** Build a distributed job queue system in Go, with API, Worker, Scheduler, and Dashboard. Users can submit jobs, process them asynchronously, track status, schedule tasks
+**Goal:** Build a job queue system in Go. Right now it just saves jobs to a database. Next, I need to make workers actually process those jobs using Redis as a queue.
 
 ---
 
-## Phase 1 — Core Job Queue Backend (2 Weeks)
+## What's Done
 
-**Goal:** Have a working API + Worker system.
+**API Server (Working)**
+- POST `/jobs/create` - creates job in database
+- GET `/jobs/:id` - get job status
+- PUT `/jobs/:id/status` - update status
+- POST `/jobs/:id/increment` - increment retry attempts
+- POST `/jobs/:id/save` - save result after processing
+- GET `/jobs?queue=name` - list jobs
 
-### TASK 1 — Job Model + Storage Layer
+**Database (Working)**
+- PostgreSQL with GORM
+- Jobs table with migrations
+- Repository pattern for database operations
+- Tests with dockertest
 
-**Implement:**
+**Job Types**
+- send_email - email jobs
+- process_payment - payment jobs
+- send_webhook - webhook jobs
 
-1. **Job model in Go**
+**Project Structure**
+```
+cmd/api/          - API server
+internal/
+  job/            - business logic
+  models/         - database models
+  storage/        - postgres repo
+  dto/            - request/response types
+middleware/       - gin middleware
+migrations/       - database migrations
+```
 
+---
+
+## What's Next - Make It Actually Work
+
+Right now jobs just sit in the database. Need to make workers process them.
+
+### 1. Add Redis Queue (Week 1)
+
+**Why:** Need something to hold job IDs that workers can pull from. Redis is fast and has blocking operations.
+
+**What to do:**
+- Add Redis to docker-compose
+- Create broker package that talks to Redis
+- Use LPUSH to add job IDs to queue
+- Use BRPOP to pull job IDs (blocking, so worker waits)
+- Update API: after saving job to DB, push ID to Redis
+
+**Files to create:**
+```
+internal/broker/
+  interface.go           - Enqueue(), Dequeue()
+  redis/
+    redis.go             - actual Redis code
+    redis_test.go        - tests with miniredis
+```
+
+**Redis operations:**
+```
+Enqueue: LPUSH "queue:email" 123
+Dequeue: BRPOP "queue:email" 0  (blocks until job available)
+```
+
+**API change:**
+```
+POST /jobs/create
+  1. Save job to PostgreSQL
+  2. Push job.ID to Redis queue
+  3. Return response
+```
+
+---
+
+### 2. Build Worker Service (Week 2)
+
+**Why:** Need something to actually run the jobs. Worker pulls from Redis and executes handlers.
+
+**What to do:**
+- Create new binary `cmd/worker/main.go`
+- Worker loop: pull job ID from Redis → fetch from DB → execute → update DB
+- Write handlers for send_email, process_payment, send_webhook
+- Add retry logic with exponential backoff
+- Run multiple workers with goroutines
+
+**Worker flow:**
+```
+1. BRPOP from Redis (blocking) → get job ID
+2. Fetch full job from PostgreSQL using ID
+3. Update status = "processing"
+4. Run handler based on job.Type
+5. If success:
+   - status = "completed"
+   - save result
+6. If fail:
+   - increment attempts
+   - if attempts < max_retries:
+     - status = "pending"
+     - push back to Redis with delay
+   - else:
+     - status = "failed"
+     - save error
+```
+
+**Files to create:**
+```
+cmd/worker/
+  main.go                - worker binary
+
+internal/worker/
+  worker.go              - main worker loop
+  handlers.go            - send_email, process_payment, send_webhook
+  registry.go            - map job types to handlers
+```
+
+**Handler example:**
 ```go
-type Job struct {
-    ID         string         `gorm:"primaryKey"`
-    Queue      string
-    Type       string
-    Payload    datatypes.JSON
-    Status     string         // queued, processing, completed, failed
-    Attempts   int
-    MaxRetries int
-    Result     datatypes.JSON
-    Error      string
-    CreatedAt  time.Time
-    UpdatedAt  time.Time
+func SendEmailHandler(ctx context.Context, payload json.RawMessage) error {
+    var email dto.SendEmailPayload
+    json.Unmarshal(payload, &email)
+    
+    // simulate sending email
+    time.Sleep(100 * time.Millisecond)
+    log.Printf("Sent email to %s", email.To)
+    
+    return nil
 }
 ```
 
-2. **Storage interface**
+**Docker compose:**
+```yaml
+worker:
+  build: .
+  command: go run cmd/worker/main.go
+  depends_on:
+    - postgres
+    - redis
+```
 
+---
+
+### 3. Add Logging and Metrics (Week 3)
+
+**Why:** Need to see what's happening. Right now just using fmt.Println everywhere.
+
+**What to do:**
+- Replace log.Println with structured logging (slog or zap)
+- Add Prometheus metrics endpoint
+- Track: jobs created, jobs processed, queue depth, errors
+- Add Grafana for visualization
+
+**Metrics to add:**
+```
+API:
+- jobs_created_total{queue, type}
+- http_request_duration_seconds
+
+Worker:
+- jobs_processed_total{queue, type, status}
+- job_duration_seconds
+- queue_depth{queue}
+```
+
+**Docker compose:**
+```yaml
+prometheus:
+  image: prom/prometheus
+  ports: ["9090:9090"]
+
+grafana:
+  image: grafana/grafana
+  ports: ["3000:3000"]
+```
+
+---
+
+### 4. Test It (Week 4)
+
+**Why:** Make sure it actually works under load.
+
+**What to do:**
+- Write load test that creates 1000 jobs
+- Run worker and watch it process them
+- Check metrics in Grafana
+- Make sure nothing crashes
+- Document throughput (jobs/sec)
+
+**Load test:**
 ```go
-type JobStorage interface {
-    CreateJob(job *Job) error
-    GetJobByID(id string) (*Job, error)
-    UpdateStatus(id string, status string) error
-    IncrementAttempts(id string) error
-    SaveResult(id string, result datatypes.JSON, err string) error
-    ListJobs(queue string) ([]Job, error)
+// test/load/load_test.go
+func TestLoadJobs(t *testing.T) {
+    for i := 0; i < 1000; i++ {
+        // POST to /jobs/create
+    }
+    // wait for workers to finish
+    // check all jobs completed
 }
 ```
 
-3. **PostgreSQL Implementation**
+---
 
-* Use GORM
-* Docker Compose will have Postgres ready
+### 5. Clean Up (Week 4)
+
+**What to do:**
+- Fix any bugs from load testing
+- Clean up git history (squash commits)
+- Update README with setup instructions
+- Add architecture diagram
+- Document how to run everything
 
 ---
 
-### TASK 2 — Broker Layer (Redis Queue)
+## After This Works
 
-**Responsibilities:**
+Once workers are processing jobs, can add:
 
-* Queue job IDs in Redis
-* Workers pick jobs via BRPOP
-* Acknowledge completion with HSET
+**Later (Phase 2):**
+- Scheduler service (cron jobs)
+- Web dashboard to view jobs
+- Job priorities
+- Dead letter queue for failed jobs
+- Better retry strategies
+- Job dependencies
 
-**Interface:**
-
-```go
-type Broker interface {
-    Enqueue(jobID string, queue string) error
-    Dequeue(queue string) (string, error)
-    Ack(jobID string) error
-}
-```
-
-**Implementation Notes:**
-
-* Use `LPUSH queue_name jobID` to push
-* Use `BRPOP queue_name 0` to pop
-* Keep job metadata in PostgreSQL
+**Much Later:**
+- Distributed tracing
+- Rate limiting
+- Job TTL
+- Scheduled jobs (run at specific time)
+- Job chains (job A then job B)
 
 ---
 
-### TASK 3 — API Server (`cmd/api`)
+## Questions I Still Have
 
-**Endpoints:**
-
-1. **POST `/jobs`**
-
-* Validate payload
-* Create job in Postgres
-* Push job ID to Redis
-
-2. **GET `/jobs/:id`**
-
-* Fetch job by ID from Postgres
-* Return status, result, attempts, queue
-
-3. **POST `/jobs/:id/retry`**
-
-* Reset status → `queued`
-* Increment `Attempts` if needed
-* Push back to Redis
-
-**Other Notes:**
-
-* Keep a separate `handlers` package
-* Use Gin for HTTP routing
+- Should I use Redis Streams instead of lists?
+- How to handle worker crashes mid-job?
+- Should workers pull from multiple queues?
+- How many workers to run?
+- Should I add job priorities now or later?
 
 ---
 
-### TASK 4 — Worker Service (`cmd/worker`)
-
-**Responsibilities:**
-
-* Poll Redis for new jobs
-* Fetch metadata from Postgres
-* Execute handler based on `job.Type`
-* Update job status
-* Retry with exponential backoff if job fails
-
-**Handler registration example:**
-
-```go
-worker.Register("email.send", EmailHandler)
-worker.Register("image.process", ImageHandler)
-```
-
-**Concurrency:**
-
-* Start multiple goroutines per worker process
-* Each goroutine listens to Redis queue
-
----
-
-### TASK 5 — Testing & Local Deployment
-
-**Docker Compose setup:**
-
-```yaml
-services:
-  api:
-    build: ./cmd/api
-    ports: ["8080:8080"]
-    environment:
-      - REDIS_URL=redis:6379
-      - DATABASE_URL=postgres://user:pass@postgres:5432/goqueue
-
-  worker:
-    build: ./cmd/worker
-    environment:
-      - REDIS_URL=redis:6379
-      - DATABASE_URL=postgres://user:pass@postgres:5432/goqueue
-
-  redis:
-    image: redis:7-alpine
-
-  postgres:
-    image: postgres:15
-    environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: pass
-      POSTGRES_DB: goqueue
-```
-
-**Goal:** After this, you can:
-
-* Submit a job via API
-* Worker picks it up and updates DB
-* Query job status via API
-
-
----
-## Phase 2 — Scheduler Service & Dashboard 
-**Goal:** Add scheduled jobs and a dashboard to monitor and manage the queue system.
-
-### TASK 6 — Scheduler Service (`cmd/scheduler`)
-
-**Responsibilities:**
-
-* Read a schedule configuration file (YAML or JSON)
-* Trigger jobs at specified times via API
-* Support cron-style scheduling
-
-**Example schedule file (`schedules.yaml`):**
-
-```yaml
-- type: "report.generate"
-  queue: "reports"
-  cron: "0 0 * * *"  # Every day at 00:00
-- type: "email.daily_summary"
-  queue: "emails"
-  cron: "0 8 * * *"  # Every day at 08:00
-```
-
-**Implementation Notes:**
-
-* Scheduler runs as a separate service
-* Uses the Go client SDK to submit jobs to the API
-* Optionally, implement leader election if running multiple scheduler instances
-
----
-
-### TASK 7 — Dashboard (`goqueue-dashboard`)
-
-**Goal:** Build a simple web UI to monitor jobs and worker activity
-
-**Features:**
-
-* List all jobs with filters (queue, status)
-* Show job details (payload, result, attempts, error)
-* Retry failed jobs via UI
-* Optional: live worker activity / job progress
-
-**Tech stack:**
-
-* React or Vue
-* REST API integration with GoQueue API service
-
-**Example folder structure:**
+## File Structure After Phase 1.5
 
 ```
-goqueue-dashboard/
-├── src/
-│   ├── components/
-│   ├── pages/
-│   └── api/
-├── public/
-├── Dockerfile
-└── package.json
+goqueue/
+├── cmd/
+│   ├── api/
+│   │   └── main.go          (existing)
+│   └── worker/
+│       └── main.go          (new)
+├── internal/
+│   ├── broker/              (new)
+│   │   ├── interface.go
+│   │   └── redis/
+│   │       └── redis.go
+│   ├── worker/              (new)
+│   │   ├── worker.go
+│   │   ├── handlers.go
+│   │   └── registry.go
+│   ├── job/                 (existing)
+│   ├── models/              (existing)
+│   └── storage/             (existing)
+├── deployments/
+│   ├── docker-compose.dev.yml
+│   └── prometheus.yml       (new)
+├── test/
+│   └── load/                (new)
+│       └── load_test.go
+└── README.md
 ```
 
 ---
 
-### TASK 8 — Integration & Deployment
+## Timeline
 
-* Update `docker-compose.yml` to include Scheduler and Dashboard
-
-```yaml
-  scheduler:
-    build: ./cmd/scheduler
-    environment:
-      - REDIS_URL=redis:6379
-      - DATABASE_URL=postgres://user:pass@postgres:5432/goqueue
-
-  dashboard:
-    build: ./goqueue-dashboard
-    ports: ["3000:3000"]
-    environment:
-      - API_URL=http://api:8080
-```
-
-* Verify all services communicate correctly:
-
-  * Scheduler submits jobs via API
-  * Worker processes jobs
-  * Dashboard displays real-time status
+**Week 1:** Redis broker
+**Week 2:** Worker service  
+**Week 3:** Logging/metrics
+**Week 4:** Load testing + cleanup

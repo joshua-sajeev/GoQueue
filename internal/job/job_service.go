@@ -30,6 +30,7 @@ var _ JobServiceInterface = (*JobService)(nil)
 // constructs a Job model, and persists it using the repository.
 // It returns a typed API error for validation failures and an
 // internal error for persistence failures.
+// TODO: validate payload
 func (s *JobService) CreateJob(ctx context.Context, dto *dto.JobCreateDTO) error {
 
 	if err := ctx.Err(); err != nil {
@@ -67,6 +68,21 @@ func (s *JobService) CreateJob(ctx context.Context, dto *dto.JobCreateDTO) error
 				"allowed":  config.AllowedJobTypes,
 			},
 		)
+	}
+
+	switch dto.Type {
+	case "send_email":
+		if err := s.validateSendEmailPayload(dto.Payload); err != nil {
+			return err
+		}
+	case "process_payment":
+		if err := s.validateProcessPaymentPayload(dto.Payload); err != nil {
+			return err
+		}
+	case "send_webhook":
+		if err := s.validateSendWebhookPayload(dto.Payload); err != nil {
+			return err
+		}
 	}
 
 	maxRetries := dto.MaxRetries
@@ -272,4 +288,16 @@ func (s *JobService) ListJobs(ctx context.Context, queue string) ([]models.Job, 
 	}
 
 	return jobs, nil
+}
+
+func (s *JobService) validateSendEmailPayload(raw json.RawMessage) error {
+	return validatePayload[dto.SendEmailPayload](raw)
+}
+
+func (s *JobService) validateProcessPaymentPayload(raw json.RawMessage) error {
+	return validatePayload[dto.ProcessPaymentPayload](raw)
+}
+
+func (s *JobService) validateSendWebhookPayload(raw json.RawMessage) error {
+	return validatePayload[dto.SendWebhookPayload](raw)
 }

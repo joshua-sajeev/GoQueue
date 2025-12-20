@@ -18,7 +18,27 @@ import (
 )
 
 func TestJobService_CreateJob(t *testing.T) {
-	validPayload := []byte(`{"email": "test@example.com", "subject": "Test"}`)
+	validPayload := []byte(`{
+    "to": "test@example.com",
+    "subject": "Test Subject",
+    "body": "This is a test email body."
+}`)
+
+	validWebhookPayload := []byte(`{
+    "url": "https://example.com/webhook",
+    "method": "POST",
+    "headers": {"Content-Type": "application/json"},
+    "body": {"message": "test"},
+    "timeout": 10
+}`)
+
+	validPaymentPayload := []byte(`{
+    "payment_id": "pay_123",
+    "user_id": "user_456",
+    "amount": 100.50,
+    "currency": "USD",
+    "method": "card"
+}`)
 	invalidPayload := []byte(`{invalid json}`)
 
 	tests := []struct {
@@ -179,26 +199,11 @@ func TestJobService_CreateJob(t *testing.T) {
 			skipRepoCall: true,
 		},
 		{
-			name: "valid queue - reports",
-			dto: &dto.JobCreateDTO{
-				Queue:   "reports",
-				Type:    "generate_report",
-				Payload: validPayload,
-			},
-			setupMock: func(m *mocks.JobRepoMock) {
-				m.On("Create", mock.Anything, mock.Anything).Return(nil)
-			},
-			setupCtx: func() context.Context {
-				return context.Background()
-			},
-			wantErr: false,
-		},
-		{
 			name: "valid queue - webhooks",
 			dto: &dto.JobCreateDTO{
 				Queue:   "webhooks",
 				Type:    "send_webhook",
-				Payload: validPayload,
+				Payload: validWebhookPayload,
 			},
 			setupMock: func(m *mocks.JobRepoMock) {
 				m.On("Create", mock.Anything, mock.Anything).Return(nil)
@@ -213,7 +218,7 @@ func TestJobService_CreateJob(t *testing.T) {
 			dto: &dto.JobCreateDTO{
 				Queue:   "default",
 				Type:    "process_payment",
-				Payload: validPayload,
+				Payload: validPaymentPayload,
 			},
 			setupMock: func(m *mocks.JobRepoMock) {
 				m.On("Create", mock.Anything, mock.Anything).Return(nil)
@@ -230,28 +235,12 @@ func TestJobService_CreateJob(t *testing.T) {
 				Type:    "send_email",
 				Payload: []byte(`{}`),
 			},
-			setupMock: func(m *mocks.JobRepoMock) {
-				m.On("Create", mock.Anything, mock.Anything).Return(nil)
-			},
+			setupMock: func(m *mocks.JobRepoMock) {},
 			setupCtx: func() context.Context {
 				return context.Background()
 			},
-			wantErr: false,
-		},
-		{
-			name: "complex nested JSON payload",
-			dto: &dto.JobCreateDTO{
-				Queue:   "default",
-				Type:    "send_email",
-				Payload: []byte(`{"user":{"id":123,"details":{"email":"test@test.com","preferences":["opt1","opt2"]}}}`),
-			},
-			setupMock: func(m *mocks.JobRepoMock) {
-				m.On("Create", mock.Anything, mock.Anything).Return(nil)
-			},
-			setupCtx: func() context.Context {
-				return context.Background()
-			},
-			wantErr: false,
+			wantErr:     true,
+			errContains: "payload validation failed",
 		},
 		{
 			name: "JSON primitive payloads",
@@ -260,13 +249,12 @@ func TestJobService_CreateJob(t *testing.T) {
 				Type:    "send_email",
 				Payload: []byte(`123`),
 			},
-			setupMock: func(m *mocks.JobRepoMock) {
-				m.On("Create", mock.Anything, mock.Anything).Return(nil)
-			},
+			setupMock: func(m *mocks.JobRepoMock) {},
 			setupCtx: func() context.Context {
 				return context.Background()
 			},
-			wantErr: false,
+			wantErr:     true,
+			errContains: "invalid payload format",
 		},
 		{
 			name: "JSON with special characters",
@@ -275,13 +263,12 @@ func TestJobService_CreateJob(t *testing.T) {
 				Type:    "send_email",
 				Payload: []byte(`{"message":"Hello \"World\"\nNew line\tTab"}`),
 			},
-			setupMock: func(m *mocks.JobRepoMock) {
-				m.On("Create", mock.Anything, mock.Anything).Return(nil)
-			},
+			setupMock: func(m *mocks.JobRepoMock) {},
 			setupCtx: func() context.Context {
 				return context.Background()
 			},
-			wantErr: false,
+			wantErr:     true,
+			errContains: "payload validation failed",
 		},
 		{
 			name: "max retries set to 1",

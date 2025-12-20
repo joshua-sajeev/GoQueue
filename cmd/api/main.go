@@ -48,6 +48,7 @@ func main() {
 	})
 
 	r.POST("/create", jobHandler.Create)
+	r.GET("/:id", jobHandler.Get)
 
 	log.Println("Starting server on :8080...")
 	if err := r.Run(":8080"); err != nil {

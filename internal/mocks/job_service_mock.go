@@ -18,12 +18,12 @@ func (m *JobServiceMock) CreateJob(ctx context.Context, dto *dto.JobCreateDTO) e
 	return args.Error(0)
 }
 
-func (m *JobServiceMock) GetJobByID(ctx context.Context, id uint) (*models.Job, error) {
+func (m *JobServiceMock) GetJobByID(ctx context.Context, id uint) (*dto.JobResponseDTO, error) {
 	args := m.Called(id)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*models.Job), args.Error(1)
+	return args.Get(0).(*dto.JobResponseDTO), args.Error(1)
 }
 
 func (m *JobServiceMock) UpdateStatus(ctx context.Context, id uint, status string) error {

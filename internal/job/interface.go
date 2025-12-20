@@ -26,7 +26,7 @@ type JobServiceInterface interface {
 	UpdateStatus(ctx context.Context, id uint, status string) error
 	IncrementAttempts(ctx context.Context, id uint) error
 	SaveResult(ctx context.Context, id uint, result datatypes.JSON, err string) error
-	ListJobs(ctx context.Context, queue string) ([]models.Job, error)
+	ListJobs(ctx context.Context, queue string) ([]dto.JobResponseDTO, error)
 }
 
 // JobHandlerInterface defines the contract for HTTP request handlers.

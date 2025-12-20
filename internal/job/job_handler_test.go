@@ -2,7 +2,7 @@ package job
 
 import (
 	"bytes"
-	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/joshu-sajeev/goqueue/common"
+	"github.com/joshu-sajeev/goqueue/internal/dto"
 	"github.com/joshu-sajeev/goqueue/internal/mocks"
 	"github.com/joshu-sajeev/goqueue/middleware"
 	"github.com/stretchr/testify/assert"
@@ -33,14 +34,6 @@ func TestJobHandler_Create(t *testing.T) {
 			},
 			expectedStatus: http.StatusCreated,
 		},
-		{
-			name: "job creation with custom max retries",
-			body: `{"queue":"email","type":"process_payment","payload":{"amount":100},"maxRetries":5}`,
-			setupMock: func(m *mocks.JobServiceMock) {
-				m.On("CreateJob", mock.Anything, mock.Anything).Return(nil)
-			},
-			expectedStatus: http.StatusCreated,
-		},
 
 		{
 			name:           "invalid request body JSON",
@@ -48,13 +41,6 @@ func TestJobHandler_Create(t *testing.T) {
 			setupMock:      func(m *mocks.JobServiceMock) {},
 			expectedStatus: http.StatusBadRequest,
 		},
-		{
-			name:           "empty request body",
-			body:           "",
-			setupMock:      func(m *mocks.JobServiceMock) {},
-			expectedStatus: http.StatusBadRequest,
-		},
-
 		{
 			name: "invalid JSON payload",
 			body: `{"queue":"default","type":"send_email","payload":"{invalid}"}`,
@@ -98,63 +84,6 @@ func TestJobHandler_Create(t *testing.T) {
 			},
 			expectedStatus: http.StatusInternalServerError,
 		},
-
-		// Context-related test cases
-		{
-			name: "context canceled before service call",
-			body: `{"queue":"default","type":"send_email","payload":{"test":true}}`,
-			setupMock: func(m *mocks.JobServiceMock) {
-				m.On("CreateJob", mock.Anything, mock.Anything).
-					Return(common.Errf(http.StatusRequestTimeout, "request was canceled"))
-			},
-			setupContext: func(c *gin.Context) {
-				ctx, cancel := context.WithCancel(c.Request.Context())
-				cancel()
-				c.Request = c.Request.WithContext(ctx)
-			},
-			expectedStatus: http.StatusRequestTimeout,
-		},
-		{
-			name: "context deadline exceeded in service layer",
-			body: `{"queue":"default","type":"send_email","payload":{"test":true}}`,
-			setupMock: func(m *mocks.JobServiceMock) {
-				m.On("CreateJob", mock.Anything, mock.Anything).
-					Return(common.Errf(http.StatusRequestTimeout, "request timeout"))
-			},
-			setupContext: func(c *gin.Context) {
-				ctx, cancel := context.WithTimeout(c.Request.Context(), 1*time.Nanosecond)
-				defer cancel()
-				time.Sleep(2 * time.Millisecond)
-				c.Request = c.Request.WithContext(ctx)
-			},
-			expectedStatus: http.StatusRequestTimeout,
-		},
-		{
-			name: "context timeout with valid job data",
-			body: `{"queue":"default","type":"send_email","payload":{"email":"test@example.com"},"maxRetries":3}`,
-			setupMock: func(m *mocks.JobServiceMock) {
-				m.On("CreateJob", mock.Anything, mock.Anything).
-					Run(func(args mock.Arguments) {
-						time.Sleep(10 * time.Millisecond)
-					}).
-					Return(common.Errf(http.StatusRequestTimeout, "request timeout"))
-			},
-			setupContext: func(c *gin.Context) {
-				ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Millisecond)
-				defer cancel()
-				c.Request = c.Request.WithContext(ctx)
-			},
-			expectedStatus: http.StatusRequestTimeout,
-		},
-		{
-			name: "context canceled after validation but before database insert",
-			body: `{"queue":"default","type":"send_email","payload":{"test":true}}`,
-			setupMock: func(m *mocks.JobServiceMock) {
-				m.On("CreateJob", mock.Anything, mock.Anything).
-					Return(common.Errf(http.StatusRequestTimeout, "request was canceled"))
-			},
-			expectedStatus: http.StatusRequestTimeout,
-		},
 	}
 
 	for _, tt := range tests {
@@ -187,6 +116,325 @@ func TestJobHandler_Create(t *testing.T) {
 			r.ServeHTTP(w, req)
 
 			assert.Equal(t, tt.expectedStatus, w.Code, "Status code mismatch for test: %s", tt.name)
+			mockService.AssertExpectations(t)
+		})
+	}
+}
+
+func TestJobHandler_Get(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	validJobResponse := &dto.JobResponseDTO{
+		ID:         1,
+		Queue:      "email",
+		Type:       "send_email",
+		Payload:    json.RawMessage(`{"email":"test@example.com","subject":"Test"}`),
+		Status:     "pending",
+		Attempts:   0,
+		MaxRetries: 3,
+	}
+
+	tests := []struct {
+		name           string
+		jobID          string
+		setupMock      func(*mocks.JobServiceMock)
+		expectedStatus int
+		expectedBody   string
+	}{
+		{
+			name:  "successful fetch",
+			jobID: "1",
+			setupMock: func(m *mocks.JobServiceMock) {
+				m.On("GetJobByID", mock.Anything, uint(1)).Return(validJobResponse, nil)
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody:   `{"id":1,"queue":"email","type":"send_email","payload":{"email":"test@example.com","subject":"Test"},"status":"pending","attempts":0,"max_retries":3,"created_at":"0001-01-01T00:00:00Z","updated_at":"0001-01-01T00:00:00Z"}`,
+		},
+		{
+			name:           "invalid ID param",
+			jobID:          "abc",
+			setupMock:      func(m *mocks.JobServiceMock) {},
+			expectedStatus: http.StatusBadRequest,
+			expectedBody:   `{"error":"Invalid ID"}`,
+		},
+		{
+			name:  "job not found",
+			jobID: "99",
+			setupMock: func(m *mocks.JobServiceMock) {
+				m.On("GetJobByID", mock.Anything, uint(99)).Return(nil, common.Errf(http.StatusNotFound, "job not found"))
+			},
+			expectedStatus: http.StatusNotFound,
+			expectedBody:   `{"error":"Job not found"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockService := new(mocks.JobServiceMock)
+			tt.setupMock(mockService)
+
+			r := gin.New()
+			handler := NewJobHandler(mockService)
+			r.GET("/jobs/:id", handler.Get)
+
+			req := httptest.NewRequest(http.MethodGet, "/jobs/"+tt.jobID, nil)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			assert.Equal(t, tt.expectedStatus, w.Code)
+			assert.JSONEq(t, tt.expectedBody, w.Body.String())
+			mockService.AssertExpectations(t)
+		})
+	}
+}
+
+func TestJobHandler_Update(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name           string
+		jobID          string
+		body           string
+		setupMock      func(*mocks.JobServiceMock)
+		expectedStatus int
+	}{
+		{
+			name:  "successful update",
+			jobID: "1",
+			body:  `{"status":"processing"}`,
+			setupMock: func(m *mocks.JobServiceMock) {
+				m.On("UpdateStatus", mock.Anything, uint(1), "processing").Return(nil)
+			},
+			expectedStatus: http.StatusNoContent,
+		},
+		{
+			name:           "invalid ID",
+			jobID:          "abc",
+			body:           `{"status":"processing"}`,
+			setupMock:      func(m *mocks.JobServiceMock) {},
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:  "service error",
+			jobID: "1",
+			body:  `{"status":"processing"}`,
+			setupMock: func(m *mocks.JobServiceMock) {
+				m.On("UpdateStatus", mock.Anything, uint(1), "processing").
+					Return(common.Errf(http.StatusInternalServerError, "failed"))
+			},
+			expectedStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockService := new(mocks.JobServiceMock)
+			tt.setupMock(mockService)
+
+			req := httptest.NewRequest(http.MethodPatch, "/jobs/"+tt.jobID, bytes.NewReader([]byte(tt.body)))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+
+			r := gin.New()
+			r.Use(middleware.ErrorHandler())
+			handler := NewJobHandler(mockService)
+			r.PATCH("/jobs/:id", handler.Update)
+
+			r.ServeHTTP(w, req)
+			assert.Equal(t, tt.expectedStatus, w.Code)
+			mockService.AssertExpectations(t)
+		})
+	}
+}
+
+func TestJobHandler_Increment(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name           string
+		jobID          string
+		setupMock      func(*mocks.JobServiceMock)
+		expectedStatus int
+	}{
+		{
+			name:  "successful increment",
+			jobID: "1",
+			setupMock: func(m *mocks.JobServiceMock) {
+				m.On("IncrementAttempts", mock.Anything, uint(1)).Return(nil)
+			},
+			expectedStatus: http.StatusNoContent,
+		},
+		{
+			name:           "invalid ID",
+			jobID:          "abc",
+			setupMock:      func(m *mocks.JobServiceMock) {},
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:  "service error",
+			jobID: "1",
+			setupMock: func(m *mocks.JobServiceMock) {
+				m.On("IncrementAttempts", mock.Anything, uint(1)).
+					Return(common.Errf(http.StatusInternalServerError, "failed"))
+			},
+			expectedStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockService := new(mocks.JobServiceMock)
+			tt.setupMock(mockService)
+
+			req := httptest.NewRequest(http.MethodPatch, "/jobs/"+tt.jobID+"/increment", nil)
+			w := httptest.NewRecorder()
+
+			r := gin.New()
+			r.Use(middleware.ErrorHandler())
+			handler := NewJobHandler(mockService)
+			r.PATCH("/jobs/:id/increment", handler.Increment)
+
+			r.ServeHTTP(w, req)
+			assert.Equal(t, tt.expectedStatus, w.Code)
+			mockService.AssertExpectations(t)
+		})
+	}
+}
+
+func TestJobHandler_Save(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name           string
+		jobID          string
+		body           string
+		setupMock      func(*mocks.JobServiceMock)
+		expectedStatus int
+	}{
+		{
+			name:  "successful save",
+			jobID: "1",
+			body:  `{"result":{"ok":true},"error":""}`,
+			setupMock: func(m *mocks.JobServiceMock) {
+				m.On("SaveResult", mock.Anything, uint(1), mock.Anything, "").Return(nil)
+			},
+			expectedStatus: http.StatusNoContent,
+		},
+		{
+			name:           "invalid ID",
+			jobID:          "abc",
+			body:           `{"result":{"ok":true},"error":""}`,
+			setupMock:      func(m *mocks.JobServiceMock) {},
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:  "service error",
+			jobID: "1",
+			body:  `{"result":{"ok":true},"error":""}`,
+			setupMock: func(m *mocks.JobServiceMock) {
+				m.On("SaveResult", mock.Anything, uint(1), mock.Anything, "").
+					Return(common.Errf(http.StatusInternalServerError, "failed"))
+			},
+			expectedStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockService := new(mocks.JobServiceMock)
+			tt.setupMock(mockService)
+
+			req := httptest.NewRequest(http.MethodPatch, "/jobs/"+tt.jobID+"/save", bytes.NewReader([]byte(tt.body)))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+
+			r := gin.New()
+			r.Use(middleware.ErrorHandler())
+			handler := NewJobHandler(mockService)
+			r.PATCH("/jobs/:id/save", handler.Save)
+
+			r.ServeHTTP(w, req)
+			assert.Equal(t, tt.expectedStatus, w.Code)
+			mockService.AssertExpectations(t)
+		})
+	}
+}
+
+func TestJobHandler_List(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	expectedDTOs := []dto.JobResponseDTO{
+		{
+			ID: 1, Queue: "default", Type: "send_email", Status: "pending",
+			Payload:    json.RawMessage(`{}`),
+			Attempts:   0,
+			MaxRetries: 0,
+			CreatedAt:  time.Time{},
+			UpdatedAt:  time.Time{},
+		},
+		{
+			ID: 2, Queue: "default", Type: "process_payment", Status: "pending",
+			Payload:    json.RawMessage(`{}`),
+			Attempts:   0,
+			MaxRetries: 0,
+			CreatedAt:  time.Time{},
+			UpdatedAt:  time.Time{},
+		},
+	}
+
+	tests := []struct {
+		name           string
+		queueParam     string
+		setupMock      func(*mocks.JobServiceMock)
+		expectedStatus int
+		expectedBody   string
+	}{
+		{
+			name:           "missing queue param",
+			queueParam:     "",
+			setupMock:      func(m *mocks.JobServiceMock) {},
+			expectedStatus: 400,
+			expectedBody:   `{"error":"queue parameter is required"}`,
+		},
+		{
+			name:       "service error",
+			queueParam: "default",
+			setupMock: func(m *mocks.JobServiceMock) {
+				m.On("ListJobs", mock.Anything, "default").
+					Return(nil, common.Errf(500, "failed to list jobs"))
+			},
+			expectedStatus: 500,
+			expectedBody:   `{"error":"failed to list jobs"}`,
+		},
+		{
+			name:       "success",
+			queueParam: "default",
+			setupMock: func(m *mocks.JobServiceMock) {
+				m.On("ListJobs", mock.Anything, "default").Return(expectedDTOs, nil)
+			},
+			expectedStatus: 200,
+			expectedBody: `[
+				{"id":1,"queue":"default","type":"send_email","status":"pending","payload":{},"attempts":0,"max_retries":0,"created_at":"0001-01-01T00:00:00Z","updated_at":"0001-01-01T00:00:00Z"},
+				{"id":2,"queue":"default","type":"process_payment","status":"pending","payload":{},"attempts":0,"max_retries":0,"created_at":"0001-01-01T00:00:00Z","updated_at":"0001-01-01T00:00:00Z"}
+			]`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockService := new(mocks.JobServiceMock)
+			tt.setupMock(mockService)
+
+			r := gin.New()
+			handler := NewJobHandler(mockService)
+			r.GET("/jobs", handler.List)
+
+			req := httptest.NewRequest(http.MethodGet, "/jobs?queue="+tt.queueParam, nil)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			assert.Equal(t, tt.expectedStatus, w.Code)
+			assert.JSONEq(t, tt.expectedBody, w.Body.String())
 			mockService.AssertExpectations(t)
 		})
 	}

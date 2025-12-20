@@ -1,6 +1,7 @@
 package job
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -8,6 +9,7 @@ import (
 	"github.com/joshu-sajeev/goqueue/common"
 	"github.com/joshu-sajeev/goqueue/internal/dto"
 	"github.com/joshu-sajeev/goqueue/middleware"
+	"gorm.io/datatypes"
 )
 
 type JobHandler struct {
@@ -41,7 +43,9 @@ func (h *JobHandler) Create(c *gin.Context) {
 	c.JSON(http.StatusCreated, req)
 }
 
-// Get handles HTTP requests for getting a job based on an id.
+// Get handles HTTP requests to fetch a job by its ID.
+// It validates the job ID, calls the JobService, and returns
+// HTTP 200 with the job data on success or an appropriate error code.
 func (h *JobHandler) Get(c *gin.Context) {
 
 	id, err := strconv.ParseUint(c.Param("id"), 10, 0)
@@ -59,14 +63,89 @@ func (h *JobHandler) Get(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// TODO:
-func (h *JobHandler) Update(c *gin.Context) {}
+// Update handles HTTP requests to update the status of a job.
+// It validates the job ID and request body, delegates the update to the JobService,
+// and returns HTTP 204 on success.
+func (h *JobHandler) Update(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 0)
+	if err != nil || id < 1 {
+		c.Error(common.Errf(http.StatusBadRequest, "invalid ID"))
+		return
+	}
 
-// TODO:
-func (h *JobHandler) Increment(c *gin.Context) {}
+	var body struct {
+		Status string `json:"status" validate:"required"`
+	}
+	if !middleware.Bind(c, &body) {
+		return
+	}
 
-// TODO:
-func (h *JobHandler) Save(c *gin.Context) {}
+	if err := h.service.UpdateStatus(c.Request.Context(), uint(id), body.Status); err != nil {
+		c.Error(err)
+		return
+	}
 
-// TODO:
-func (h *JobHandler) List(c *gin.Context) {}
+	c.Status(http.StatusNoContent)
+}
+
+// Increment handles HTTP requests to increment the attempt counter of a job.
+// It validates the job ID, calls the JobService, and returns HTTP 204 on success.
+func (h *JobHandler) Increment(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 0)
+	if err != nil || id < 1 {
+		c.Error(common.Errf(http.StatusBadRequest, "invalid ID"))
+		return
+	}
+
+	if err := h.service.IncrementAttempts(c.Request.Context(), uint(id)); err != nil {
+		c.Error(err)
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
+// Save handles HTTP requests to save the result and error message for a job.
+// It validates the job ID and request body, calls the JobService, and returns HTTP 204 on success.
+func (h *JobHandler) Save(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 0)
+	if err != nil || id < 1 {
+		c.Error(common.Errf(http.StatusBadRequest, "invalid ID"))
+		return
+	}
+
+	var body struct {
+		Result json.RawMessage `json:"result"`
+		Error  string          `json:"error"`
+	}
+	if !middleware.Bind(c, &body) {
+		return
+	}
+
+	// Cast json.RawMessage to datatypes.JSON
+	if err := h.service.SaveResult(c.Request.Context(), uint(id), datatypes.JSON(body.Result), body.Error); err != nil {
+		c.Error(err)
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
+// List handles HTTP requests to retrieve all jobs for a given queue.
+// It validates the queue query parameter, fetches jobs via JobService,
+// and returns them as JSON with HTTP 200.
+func (h *JobHandler) List(c *gin.Context) {
+	queue := c.Query("queue")
+	if queue == "" {
+		c.JSON(http.StatusBadRequest, common.APIError{Message: "queue parameter is required"})
+		return
+	}
+
+	jobs, err := h.service.ListJobs(c.Request.Context(), queue)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, common.APIError{Message: err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, jobs)
+}

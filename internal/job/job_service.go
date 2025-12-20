@@ -30,7 +30,6 @@ var _ JobServiceInterface = (*JobService)(nil)
 // constructs a Job model, and persists it using the repository.
 // It returns a typed API error for validation failures and an
 // internal error for persistence failures.
-// TODO: validate payload
 func (s *JobService) CreateJob(ctx context.Context, dto *dto.JobCreateDTO) error {
 
 	if err := ctx.Err(); err != nil {
@@ -263,7 +262,7 @@ func (s *JobService) SaveResult(
 // ListJobs retrieves all jobs belonging to a specific queue.
 // It validates request context, fetches jobs from the repository,
 // and maps repository or context errors to appropriate API errors.
-func (s *JobService) ListJobs(ctx context.Context, queue string) ([]models.Job, error) {
+func (s *JobService) ListJobs(ctx context.Context, queue string) ([]dto.JobResponseDTO, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, common.Errf(
 			http.StatusRequestTimeout,
@@ -287,7 +286,24 @@ func (s *JobService) ListJobs(ctx context.Context, queue string) ([]models.Job, 
 		)
 	}
 
-	return jobs, nil
+	dtos := make([]dto.JobResponseDTO, len(jobs))
+	for i, job := range jobs {
+		dtos[i] = dto.JobResponseDTO{
+			ID:         job.ID,
+			Queue:      job.Queue,
+			Type:       job.Type,
+			Payload:    json.RawMessage(job.Payload),
+			Status:     job.Status,
+			Attempts:   job.Attempts,
+			MaxRetries: job.MaxRetries,
+			Result:     json.RawMessage(job.Result),
+			Error:      job.Error,
+			CreatedAt:  job.CreatedAt,
+			UpdatedAt:  job.UpdatedAt,
+		}
+	}
+
+	return dtos, nil
 }
 
 func (s *JobService) validateSendEmailPayload(raw json.RawMessage) error {

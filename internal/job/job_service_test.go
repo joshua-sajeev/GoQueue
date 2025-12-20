@@ -675,8 +675,13 @@ func TestJobService_SaveResult(t *testing.T) {
 
 func TestJobService_ListJobs(t *testing.T) {
 	jobs := []models.Job{
-		{ID: 1, Queue: "default"},
-		{ID: 2, Queue: "default"},
+		{ID: 1, Queue: "default", Type: "send_email", Status: "pending"},
+		{ID: 2, Queue: "default", Type: "process_payment", Status: "pending"},
+	}
+
+	expectedDTOs := []dto.JobResponseDTO{
+		{ID: 1, Queue: "default", Type: "send_email", Status: "pending"},
+		{ID: 2, Queue: "default", Type: "process_payment", Status: "pending"},
 	}
 
 	tests := []struct {
@@ -686,7 +691,7 @@ func TestJobService_ListJobs(t *testing.T) {
 		setupCtx    func() context.Context
 		wantErr     bool
 		errContains string
-		wantJobs    []models.Job
+		wantJobs    []dto.JobResponseDTO
 	}{
 		{
 			name:      "context canceled",
@@ -719,7 +724,7 @@ func TestJobService_ListJobs(t *testing.T) {
 			},
 			setupCtx: func() context.Context { return context.Background() },
 			wantErr:  false,
-			wantJobs: []models.Job{},
+			wantJobs: []dto.JobResponseDTO{},
 		},
 		{
 			name:  "success",
@@ -729,7 +734,7 @@ func TestJobService_ListJobs(t *testing.T) {
 			},
 			setupCtx: func() context.Context { return context.Background() },
 			wantErr:  false,
-			wantJobs: jobs,
+			wantJobs: expectedDTOs,
 		},
 	}
 

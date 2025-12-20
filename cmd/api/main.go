@@ -47,9 +47,15 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	r.POST("/create", jobHandler.Create)
-	r.GET("/:id", jobHandler.Get)
-
+	jobs := r.Group("/jobs")
+	{
+		jobs.POST("/create", jobHandler.Create)
+		jobs.GET("/:id", jobHandler.Get)
+		jobs.PUT("/:id/status", jobHandler.Update)
+		jobs.POST("/:id/increment", jobHandler.Increment)
+		jobs.POST("/:id/save", jobHandler.Save)
+		jobs.GET("/", jobHandler.List)
+	}
 	log.Println("Starting server on :8080...")
 	if err := r.Run(":8080"); err != nil {
 		log.Fatalf("Server failed: %v", err)

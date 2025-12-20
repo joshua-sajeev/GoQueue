@@ -24,6 +24,7 @@ help:
 	@echo "  make migrate-reset       - Rollback all migrations"
 	@echo "  make migrate-create NAME=table_name - Create new migration"
 	@echo "  make db-connect          - Connect to PostgreSQL shell"
+	@echo "  make compose-reset-db    - Delete Postgres volume (ALL DATA LOST)"
 
 ## Docker Compose Commands
 compose-up:
@@ -76,3 +77,10 @@ migrate-create:
 ## Database Commands
 db-connect:
 	docker exec -it postgres_container psql -U postgres -d goqueue
+
+## Delete postgres volume
+compose-reset-db:
+	@echo "⚠️  WARNING: This will DELETE the PostgreSQL volume and ALL data"
+	@echo "Stopping containers..."
+	cd deployments && docker-compose -f docker-compose.dev.yml down -v
+	@echo "PostgreSQL volume deleted. Run 'make compose-up' to recreate."

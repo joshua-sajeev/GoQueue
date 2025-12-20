@@ -17,7 +17,27 @@ import (
 )
 
 func TestJobService_CreateJob(t *testing.T) {
-	validPayload := []byte(`{"email": "test@example.com", "subject": "Test"}`)
+	validPayload := []byte(`{
+    "to": "test@example.com",
+    "subject": "Test Subject",
+    "body": "This is a test email body."
+}`)
+
+	validWebhookPayload := []byte(`{
+    "url": "https://example.com/webhook",
+    "method": "POST",
+    "headers": {"Content-Type": "application/json"},
+    "body": {"message": "test"},
+    "timeout": 10
+}`)
+
+	validPaymentPayload := []byte(`{
+    "payment_id": "pay_123",
+    "user_id": "user_456",
+    "amount": 100.50,
+    "currency": "USD",
+    "method": "card"
+}`)
 	invalidPayload := []byte(`{invalid json}`)
 
 	tests := []struct {
@@ -116,6 +136,129 @@ func TestJobService_CreateJob(t *testing.T) {
 			wantErr:      true,
 			errContains:  "invalid job type",
 			skipRepoCall: true,
+		},
+		{
+			name: "empty job type",
+			dto: &dto.JobCreateDTO{
+				Queue:   "default",
+				Type:    "",
+				Payload: validPayload,
+			},
+			setupMock: func(m *mocks.JobRepoMock) {},
+			setupCtx: func() context.Context {
+				return context.Background()
+			},
+			wantErr:      true,
+			errContains:  "invalid job type",
+			skipRepoCall: true,
+		},
+		{
+			name: "valid queue - webhooks",
+			dto: &dto.JobCreateDTO{
+				Queue:   "webhooks",
+				Type:    "send_webhook",
+				Payload: validWebhookPayload,
+			},
+			setupMock: func(m *mocks.JobRepoMock) {
+				m.On("Create", mock.Anything, mock.Anything).Return(nil)
+			},
+			setupCtx: func() context.Context {
+				return context.Background()
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid job type - process_payment",
+			dto: &dto.JobCreateDTO{
+				Queue:   "default",
+				Type:    "process_payment",
+				Payload: validPaymentPayload,
+			},
+			setupMock: func(m *mocks.JobRepoMock) {
+				m.On("Create", mock.Anything, mock.Anything).Return(nil)
+			},
+			setupCtx: func() context.Context {
+				return context.Background()
+			},
+			wantErr: false,
+		},
+		{
+			name: "empty JSON object payload",
+			dto: &dto.JobCreateDTO{
+				Queue:   "default",
+				Type:    "send_email",
+				Payload: []byte(`{}`),
+			},
+			setupMock: func(m *mocks.JobRepoMock) {},
+			setupCtx: func() context.Context {
+				return context.Background()
+			},
+			wantErr:     true,
+			errContains: "payload validation failed",
+		},
+		{
+			name: "JSON primitive payloads",
+			dto: &dto.JobCreateDTO{
+				Queue:   "default",
+				Type:    "send_email",
+				Payload: []byte(`123`),
+			},
+			setupMock: func(m *mocks.JobRepoMock) {},
+			setupCtx: func() context.Context {
+				return context.Background()
+			},
+			wantErr:     true,
+			errContains: "invalid payload format",
+		},
+		{
+			name: "JSON with special characters",
+			dto: &dto.JobCreateDTO{
+				Queue:   "default",
+				Type:    "send_email",
+				Payload: []byte(`{"message":"Hello \"World\"\nNew line\tTab"}`),
+			},
+			setupMock: func(m *mocks.JobRepoMock) {},
+			setupCtx: func() context.Context {
+				return context.Background()
+			},
+			wantErr:     true,
+			errContains: "payload validation failed",
+		},
+		{
+			name: "max retries set to 1",
+			dto: &dto.JobCreateDTO{
+				Queue:      "default",
+				Type:       "send_email",
+				Payload:    validPayload,
+				MaxRetries: 1,
+			},
+			setupMock: func(m *mocks.JobRepoMock) {
+				m.On("Create", mock.Anything, mock.MatchedBy(func(job *models.Job) bool {
+					return job.MaxRetries == 1
+				})).Return(nil)
+			},
+			setupCtx: func() context.Context {
+				return context.Background()
+			},
+			wantErr: false,
+		},
+		{
+			name: "max retries set to high number",
+			dto: &dto.JobCreateDTO{
+				Queue:      "default",
+				Type:       "send_email",
+				Payload:    validPayload,
+				MaxRetries: 100,
+			},
+			setupMock: func(m *mocks.JobRepoMock) {
+				m.On("Create", mock.Anything, mock.MatchedBy(func(job *models.Job) bool {
+					return job.MaxRetries == 100
+				})).Return(nil)
+			},
+			setupCtx: func() context.Context {
+				return context.Background()
+			},
+			wantErr: false,
 		},
 		{
 			name: "repository error - database failure",

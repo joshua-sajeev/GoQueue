@@ -63,8 +63,6 @@ func TestMain(m *testing.M) {
 		testPort,
 	)
 
-	log.Printf("Postgres container started on port %s", testPort)
-
 	if err := pool.Retry(func() error {
 		var err error
 		testDB, err = sql.Open("postgres", testDSN)
@@ -81,7 +79,6 @@ func TestMain(m *testing.M) {
 		defer cancel()
 
 		if err := testDB.PingContext(ctx); err != nil {
-			log.Printf("Failed to ping database: %v", err)
 			testDB.Close()
 			return err
 		}
@@ -89,12 +86,9 @@ func TestMain(m *testing.M) {
 		var version string
 		err = testDB.QueryRowContext(ctx, "SELECT version()").Scan(&version)
 		if err != nil {
-			log.Printf("Failed to query database: %v", err)
 			testDB.Close()
 			return err
 		}
-
-		log.Printf("Successfully connected to PostgreSQL: %s", version)
 
 		// Run Goose migrations
 		if err := runMigrations(testDB); err != nil {
@@ -107,8 +101,6 @@ func TestMain(m *testing.M) {
 		_, err = testDB.Exec("CREATE DATABASE example2")
 		if err != nil {
 			log.Printf("Warning: Could not create example2 database: %v", err)
-		} else {
-			log.Println("Created example2 database for testing")
 		}
 
 		return nil
@@ -159,7 +151,6 @@ func runMigrations(db *sql.DB) error {
 		return fmt.Errorf("failed to run goose migrations: %w", err)
 	}
 
-	log.Println("Migrations completed successfully")
 	return nil
 }
 
@@ -462,9 +453,11 @@ func TestConnectDB(t *testing.T) {
 
 // setupTestDB returns a fresh DB connection and context with automatic cleanup
 // Each test gets its own connection to avoid connection pool issues
-func setupTestDB(t *testing.T) (*gorm.DB, context.Context) {
+func setupTestDB(tb testing.TB) (*gorm.DB, context.Context) {
+	tb.Helper()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	t.Cleanup(cancel)
+	tb.Cleanup(cancel)
 
 	testConfig := &postgres.Config{
 		User:       "testuser",
@@ -478,15 +471,15 @@ func setupTestDB(t *testing.T) (*gorm.DB, context.Context) {
 	}
 
 	db, err := postgres.ConnectDB(ctx, testConfig)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
-	// Clean up the jobs table at the start of each test
+	// Clean up the jobs table at the start of each test / benchmark
 	if err := db.Exec("DELETE FROM jobs").Error; err != nil {
-		t.Logf("Warning: Failed to clean jobs table: %v", err)
+		tb.Logf("Warning: Failed to clean jobs table: %v", err)
 	}
 
 	// Register cleanup
-	t.Cleanup(func() {
+	tb.Cleanup(func() {
 		closeTestDB(db)
 	})
 

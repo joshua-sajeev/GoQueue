@@ -3,7 +3,6 @@ package postgres
 import (
 	"context"
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -105,8 +104,6 @@ func ConnectDB(ctx context.Context, cfg *Config) (*gorm.DB, error) {
 		cfg.Host, cfg.User, cfg.Password, cfg.Database, cfg.Port, cfg.ConnectTimeout,
 	)
 
-	log.Printf("Connecting to: %s@%s:%s/%s", cfg.User, cfg.Host, cfg.Port, cfg.Database)
-
 	gormConfig := &gorm.Config{
 		Logger: logger.Default.LogMode(logger.LogLevel(cfg.LogLevel)),
 	}
@@ -118,8 +115,6 @@ func ConnectDB(ctx context.Context, cfg *Config) (*gorm.DB, error) {
 			return nil, ctx.Err()
 		}
 
-		log.Printf("[DB] Attempt %d/%d: connecting...", i+1, cfg.MaxRetries)
-
 		gdb, err := gorm.Open(postgres.Open(dsn), gormConfig)
 		if err == nil {
 			sqlDB, dbErr := gdb.DB()
@@ -129,7 +124,6 @@ func ConnectDB(ctx context.Context, cfg *Config) (*gorm.DB, error) {
 				cancel()
 
 				if pingErr == nil {
-					log.Println("[DB] Connected successfully")
 
 					sqlDB.SetMaxIdleConns(10)
 					sqlDB.SetMaxOpenConns(50)
@@ -142,9 +136,6 @@ func ConnectDB(ctx context.Context, cfg *Config) (*gorm.DB, error) {
 				err = dbErr
 			}
 		}
-
-		log.Printf("[DB][WARN] %s. Retrying in %v...",
-			simplifyDBError(err), cfg.RetryDelay)
 
 		// Respect context cancellation during retry delay
 		select {

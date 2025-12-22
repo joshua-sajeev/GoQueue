@@ -31,16 +31,8 @@ var _ JobServiceInterface = (*JobService)(nil)
 // It returns a typed API error for validation failures and an
 // internal error for persistence failures.
 func (s *JobService) CreateJob(ctx context.Context, dto *dto.JobCreateDTO) error {
-
 	if err := ctx.Err(); err != nil {
-		switch err {
-		case context.Canceled:
-			return common.Errf(http.StatusRequestTimeout, "request was canceled")
-		case context.DeadlineExceeded:
-			return common.Errf(http.StatusRequestTimeout, "request timeout")
-		default:
-			return common.Errf(http.StatusInternalServerError, "request failed")
-		}
+		return common.Errf(http.StatusRequestTimeout, "request canceled or timed out")
 	}
 
 	if !json.Valid(dto.Payload) {
@@ -93,24 +85,24 @@ func (s *JobService) CreateJob(ctx context.Context, dto *dto.JobCreateDTO) error
 		Queue:      dto.Queue,
 		Type:       dto.Type,
 		Payload:    datatypes.JSON(dto.Payload),
-		Attempts:   0,
 		MaxRetries: maxRetries,
-		Status:     "pending",
+	}
+
+	// ONLY set AvailableAt if client explicitly provided it
+	// TODO: Implement Scheduled jobs
+	if dto.AvailableAt != nil {
+		job.AvailableAt = *dto.AvailableAt
 	}
 
 	if err := s.repo.Create(ctx, &job); err != nil {
-		if errors.Is(err, context.Canceled) {
+		switch {
+		case errors.Is(err, context.Canceled):
 			return common.Errf(http.StatusRequestTimeout, "request was canceled")
-		}
-		if errors.Is(err, context.DeadlineExceeded) {
+		case errors.Is(err, context.DeadlineExceeded):
 			return common.Errf(http.StatusRequestTimeout, "request timeout")
+		default:
+			return common.Errf(http.StatusInternalServerError, "failed to add job to database")
 		}
-
-		return common.Errf(
-			http.StatusInternalServerError,
-			"failed to add job to database: %v",
-			err,
-		)
 	}
 
 	return nil

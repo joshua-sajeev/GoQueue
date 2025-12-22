@@ -26,7 +26,7 @@ func TestJobRepository_Create(t *testing.T) {
 				Queue:      "email",
 				Type:       "send_email",
 				Payload:    datatypes.JSON([]byte(`{"email":"test@example.com","foo":"bar"}`)),
-				Status:     "done",
+				Status:     "queued",
 				Attempts:   0,
 				MaxRetries: 10,
 				Result:     datatypes.JSON([]byte(`{"status":"ok"}`)),

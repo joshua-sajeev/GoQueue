@@ -6,10 +6,11 @@ import (
 )
 
 type JobCreateDTO struct {
-	Queue      string          `json:"queue" validate:"required"`
-	Type       string          `json:"type" validate:"required"`
-	Payload    json.RawMessage `json:"payload" validate:"required"`
-	MaxRetries int             `json:"max_retries" validate:"gte=0,lte=20"`
+	Queue       string          `json:"queue" validate:"required"`
+	Type        string          `json:"type" validate:"required"`
+	Payload     json.RawMessage `json:"payload" validate:"required"`
+	MaxRetries  int             `json:"max_retries" validate:"gte=0,lte=20"`
+	AvailableAt *time.Time      `json:"available_at,omitempty"`
 }
 
 type JobResponseDTO struct {

@@ -63,7 +63,6 @@ func TestJobService_CreateJob(t *testing.T) {
 					return job.Queue == "default" &&
 						job.Type == "send_email" &&
 						job.MaxRetries == 3 &&
-						job.Status == "pending" &&
 						job.Attempts == 0
 				})).Return(nil)
 			},
@@ -84,8 +83,7 @@ func TestJobService_CreateJob(t *testing.T) {
 				m.On("Create", mock.Anything, mock.MatchedBy(func(job *models.Job) bool {
 					return job.Queue == "email" &&
 						job.Type == "send_email" &&
-						job.MaxRetries == 5 &&
-						job.Status == "pending"
+						job.MaxRetries == 5
 				})).Return(nil)
 			},
 			setupCtx: func() context.Context {

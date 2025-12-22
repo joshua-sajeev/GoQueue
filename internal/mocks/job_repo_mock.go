@@ -2,6 +2,7 @@ package mocks
 
 import (
 	"context"
+	"time"
 
 	"github.com/joshu-sajeev/goqueue/internal/models"
 	"github.com/stretchr/testify/mock"
@@ -46,6 +47,30 @@ func (m *JobRepoMock) SaveResult(
 
 func (m *JobRepoMock) List(ctx context.Context, queue string) ([]models.Job, error) {
 	args := m.Called(ctx, queue)
+
+	jobs, _ := args.Get(0).([]models.Job)
+	return jobs, args.Error(1)
+}
+
+func (m *JobRepoMock) AcquireNext(ctx context.Context, queue string, workerID uint, lockDuration time.Duration) (*models.Job, error) {
+	args := m.Called(ctx, queue, workerID, lockDuration)
+
+	job, _ := args.Get(0).(*models.Job)
+	return job, args.Error(1)
+}
+
+func (m *JobRepoMock) Release(ctx context.Context, id uint) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
+func (m *JobRepoMock) RetryLater(ctx context.Context, id uint, availableAt time.Time) error {
+	args := m.Called(ctx, id, availableAt)
+	return args.Error(0)
+}
+
+func (m *JobRepoMock) ListStuckJobs(ctx context.Context, staleDuration time.Duration) ([]models.Job, error) {
+	args := m.Called(ctx, staleDuration)
 
 	jobs, _ := args.Get(0).([]models.Job)
 	return jobs, args.Error(1)

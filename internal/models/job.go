@@ -19,7 +19,7 @@ type Job struct {
 
 	AvailableAt time.Time
 	LockedAt    *time.Time
-	LockedBy    *string
+	LockedBy    *uint
 
 	Result datatypes.JSON
 	Error  string

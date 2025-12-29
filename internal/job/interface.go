@@ -2,6 +2,7 @@ package job
 
 import (
 	"context"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joshu-sajeev/goqueue/internal/dto"
@@ -17,6 +18,11 @@ type JobRepoInterface interface {
 	IncrementAttempts(ctx context.Context, id uint) error
 	SaveResult(ctx context.Context, id uint, result datatypes.JSON, err string) error
 	List(ctx context.Context, queue string) ([]models.Job, error)
+
+	AcquireNext(ctx context.Context, queue string, workerID uint, lockDuration time.Duration) (*models.Job, error)
+	Release(ctx context.Context, id uint) error
+	RetryLater(ctx context.Context, id uint, availableAt time.Time) error
+	ListStuckJobs(ctx context.Context, staleDuration time.Duration) ([]models.Job, error)
 }
 
 // JobServiceInterface defines the contract for job business logic operations.

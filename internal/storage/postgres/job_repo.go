@@ -28,6 +28,7 @@ var _ job.JobRepoInterface = (*JobRepository)(nil)
 // context for cancellation and timeout propagation. Returns an error if the
 // database operation fails.
 func (r *JobRepository) Create(ctx context.Context, job *models.Job) error {
+	//TODO:Use constants
 	job.Status = "queued"
 	if job.AvailableAt.IsZero() {
 		job.AvailableAt = time.Now()
@@ -108,7 +109,7 @@ func (r *JobRepository) List(ctx context.Context, queue string) ([]models.Job, e
 
 // AcquireNext atomically claims the next available job for a worker
 // This is THE CRITICAL METHOD for queue operation
-func (r *JobRepository) AcquireNext(ctx context.Context, queue string, workerID string, lockDuration time.Duration) (*models.Job, error) {
+func (r *JobRepository) AcquireNext(ctx context.Context, queue string, workerID uint, lockDuration time.Duration) (*models.Job, error) {
 	var job models.Job
 	now := time.Now()
 	lockExpiry := now.Add(lockDuration)

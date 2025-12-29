@@ -3,6 +3,7 @@ package integration
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/joshu-sajeev/goqueue/internal/models"
 	"github.com/joshu-sajeev/goqueue/internal/storage/postgres"
@@ -580,6 +581,286 @@ func TestJobRepository_List(t *testing.T) {
 
 			jobs, err := repo.List(ctx, tt.queue)
 
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errContains)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Len(t, jobs, tt.wantCount)
+		})
+	}
+}
+
+func TestJobRepository_AcquireNext(t *testing.T) {
+	now := time.Now()
+
+	tests := []struct {
+		name         string
+		queue        string
+		workerID     uint
+		lockDuration time.Duration
+		setup        func(db *gorm.DB)
+		wantErr      bool
+		errContains  string
+	}{
+		{
+			name:         "no jobs available",
+			queue:        "default",
+			workerID:     1,
+			lockDuration: time.Minute,
+			setup:        func(db *gorm.DB) {},
+			wantErr:      true,
+			errContains:  "no jobs available",
+		},
+		{
+			name:         "successfully acquires queued job",
+			queue:        "default",
+			workerID:     42,
+			lockDuration: time.Minute,
+			setup: func(db *gorm.DB) {
+				job := models.Job{
+					Queue:       "default",
+					Status:      "queued",
+					AvailableAt: now.Add(-time.Minute),
+				}
+				require.NoError(t, db.Create(&job).Error)
+			},
+			wantErr: false,
+		},
+		{
+			name:         "job not yet available",
+			queue:        "default",
+			workerID:     1,
+			lockDuration: time.Minute,
+			setup: func(db *gorm.DB) {
+				job := models.Job{
+					Queue:       "default",
+					Status:      "queued",
+					AvailableAt: now.Add(time.Hour),
+				}
+				require.NoError(t, db.Create(&job).Error)
+			},
+			wantErr:     true,
+			errContains: "no jobs available",
+		},
+		{
+			name:         "locked job is skipped",
+			queue:        "default",
+			workerID:     2,
+			lockDuration: time.Minute,
+			setup: func(db *gorm.DB) {
+				lockedAt := now
+				job := models.Job{
+					Queue:       "default",
+					Status:      "queued",
+					AvailableAt: now.Add(-time.Minute),
+					LockedAt:    &lockedAt,
+					LockedBy:    ptrUint(1),
+				}
+				require.NoError(t, db.Create(&job).Error)
+			},
+			wantErr:     true,
+			errContains: "no jobs available",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db, ctx := setupTestDB(t)
+			defer closeTestDB(db)
+
+			repo := postgres.NewJobRepository(db)
+
+			if tt.setup != nil {
+				tt.setup(db)
+			}
+
+			job, err := repo.AcquireNext(ctx, tt.queue, tt.workerID, tt.lockDuration)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errContains)
+				return
+			}
+
+			require.NoError(t, err)
+			require.NotNil(t, job)
+
+			var dbJob models.Job
+			require.NoError(t, db.First(&dbJob, job.ID).Error)
+
+			assert.Equal(t, "processing", dbJob.Status)
+			assert.Equal(t, tt.workerID, *dbJob.LockedBy)
+			assert.NotNil(t, dbJob.LockedAt)
+			assert.True(t, dbJob.LockedAt.After(now))
+		})
+	}
+}
+
+func ptrUint(v uint) *uint {
+	return &v
+}
+
+func TestJobRepository_Release(t *testing.T) {
+	now := time.Now()
+
+	tests := []struct {
+		name    string
+		setup   func(db *gorm.DB) uint
+		wantErr bool
+	}{
+		{
+			name: "release existing job",
+			setup: func(db *gorm.DB) uint {
+				job := models.Job{
+					Queue:    "default",
+					Status:   "processing",
+					LockedAt: &now,
+					LockedBy: ptrUint(42),
+				}
+				require.NoError(t, db.Create(&job).Error)
+				return job.ID
+			},
+			wantErr: false,
+		},
+		{
+			name: "release non-existent job (idempotent)",
+			setup: func(db *gorm.DB) uint {
+				return 9999
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db, ctx := setupTestDB(t)
+			defer closeTestDB(db)
+
+			repo := postgres.NewJobRepository(db)
+			id := tt.setup(db)
+
+			err := repo.Release(ctx, id)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+
+			var job models.Job
+			if db.First(&job, id).Error == nil {
+				assert.Equal(t, "queued", job.Status)
+				assert.Nil(t, job.LockedBy)
+				assert.Nil(t, job.LockedAt)
+			}
+		})
+	}
+}
+
+func TestJobRepository_RetryLater(t *testing.T) {
+	now := time.Now()
+	availableAt := now.Add(time.Minute)
+
+	tests := []struct {
+		name  string
+		setup func(db *gorm.DB) uint
+	}{
+		{
+			name: "retry existing job",
+			setup: func(db *gorm.DB) uint {
+				job := models.Job{
+					Queue:    "default",
+					Status:   "processing",
+					LockedAt: &now,
+					LockedBy: ptrUint(1),
+				}
+				require.NoError(t, db.Create(&job).Error)
+				return job.ID
+			},
+		},
+		{
+			name: "retry non-existent job (idempotent)",
+			setup: func(db *gorm.DB) uint {
+				return 9999
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db, ctx := setupTestDB(t)
+			defer closeTestDB(db)
+
+			repo := postgres.NewJobRepository(db)
+			id := tt.setup(db)
+
+			err := repo.RetryLater(ctx, id, availableAt)
+			require.NoError(t, err)
+
+			var job models.Job
+			if db.First(&job, id).Error == nil {
+				assert.Equal(t, "queued", job.Status)
+				assert.Nil(t, job.LockedBy)
+				assert.Nil(t, job.LockedAt)
+				assert.WithinDuration(t, availableAt, job.AvailableAt, time.Millisecond)
+			}
+		})
+	}
+}
+
+func TestJobRepository_ListStuckJobs(t *testing.T) {
+	now := time.Now()
+
+	tests := []struct {
+		name        string
+		setup       func(db *gorm.DB)
+		stale       time.Duration
+		wantCount   int
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "returns stuck jobs",
+			setup: func(db *gorm.DB) {
+				old := now.Add(-2 * time.Hour)
+				jobs := []models.Job{
+					{Queue: "default", Status: "processing", LockedAt: &old},
+					{Queue: "default", Status: "processing", LockedAt: &old},
+					{Queue: "default", Status: "queued"},
+				}
+				for _, j := range jobs {
+					require.NoError(t, db.Create(&j).Error)
+				}
+			},
+			stale:     time.Hour,
+			wantCount: 2,
+		},
+		{
+			name: "no stuck jobs",
+			setup: func(db *gorm.DB) {
+				j := models.Job{Queue: "default", Status: "processing", LockedAt: &now}
+				require.NoError(t, db.Create(&j).Error)
+			},
+			stale:     time.Hour,
+			wantCount: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db, ctx := setupTestDB(t)
+			defer closeTestDB(db)
+
+			repo := postgres.NewJobRepository(db)
+
+			if tt.setup != nil {
+				tt.setup(db)
+			}
+
+			jobs, err := repo.ListStuckJobs(ctx, tt.stale)
 			if tt.wantErr {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.errContains)

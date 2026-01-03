@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/joshu-sajeev/goqueue/internal/config"
 	"github.com/joshu-sajeev/goqueue/internal/dto"
 	"github.com/joshu-sajeev/goqueue/internal/mocks"
 	"github.com/joshu-sajeev/goqueue/internal/models"
@@ -345,7 +346,7 @@ func TestJobService_GetJobByID(t *testing.T) {
 		ID:         1,
 		Queue:      "email",
 		Type:       "send_email",
-		Status:     "pending",
+		Status:     config.JobStatusQueued,
 		Attempts:   0,
 		MaxRetries: 3,
 		Payload:    json.RawMessage(`{"to":"test@example.com","subject":"Test","body":"Hello"}`),
@@ -370,7 +371,7 @@ func TestJobService_GetJobByID(t *testing.T) {
 						ID:         1,
 						Queue:      "email",
 						Type:       "send_email",
-						Status:     "pending",
+						Status:     config.JobStatusQueued,
 						Attempts:   0,
 						MaxRetries: 3,
 						Payload:    []byte(`{"to":"test@example.com","subject":"Test","body":"Hello"}`),
@@ -422,7 +423,7 @@ func TestJobService_GetJobByID(t *testing.T) {
 						ID:         1,
 						Queue:      "email",
 						Type:       "send_email",
-						Status:     "pending",
+						Status:     config.JobStatusQueued,
 						Attempts:   0,
 						MaxRetries: 3,
 						Payload:    []byte(`{"to":"test@example.com","subject":"Test","body":"Hello"}`),
@@ -473,7 +474,7 @@ func TestJobService_UpdateStatus(t *testing.T) {
 	tests := []struct {
 		name        string
 		jobID       uint
-		status      string
+		status      config.JobStatus
 		setupMock   func(*mocks.JobRepoMock)
 		setupCtx    func() context.Context
 		wantErr     bool
@@ -482,9 +483,9 @@ func TestJobService_UpdateStatus(t *testing.T) {
 		{
 			name:   "successful status update",
 			jobID:  1,
-			status: "processing",
+			status: config.JobStatusRunning,
 			setupMock: func(m *mocks.JobRepoMock) {
-				m.On("UpdateStatus", mock.Anything, uint(1), "processing").Return(nil)
+				m.On("UpdateStatus", mock.Anything, uint(1), config.JobStatusRunning).Return(nil)
 			},
 			setupCtx: func() context.Context {
 				return context.Background()
@@ -494,9 +495,9 @@ func TestJobService_UpdateStatus(t *testing.T) {
 		{
 			name:   "repository returns internal error",
 			jobID:  2,
-			status: "completed",
+			status: config.JobStatusCompleted,
 			setupMock: func(m *mocks.JobRepoMock) {
-				m.On("UpdateStatus", mock.Anything, uint(2), "completed").
+				m.On("UpdateStatus", mock.Anything, uint(2), config.JobStatusCompleted).
 					Return(fmt.Errorf("db failure"))
 			},
 			setupCtx: func() context.Context {
@@ -508,7 +509,7 @@ func TestJobService_UpdateStatus(t *testing.T) {
 		{
 			name:      "context canceled before repo call",
 			jobID:     3,
-			status:    "failed",
+			status:    config.JobStatusFailed,
 			setupMock: func(m *mocks.JobRepoMock) {},
 			setupCtx: func() context.Context {
 				ctx, cancel := context.WithCancel(context.Background())
@@ -521,7 +522,7 @@ func TestJobService_UpdateStatus(t *testing.T) {
 		{
 			name:      "context deadline exceeded before repo call",
 			jobID:     4,
-			status:    "pending",
+			status:    config.JobStatusQueued,
 			setupMock: func(m *mocks.JobRepoMock) {},
 			setupCtx: func() context.Context {
 				ctx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
@@ -535,9 +536,9 @@ func TestJobService_UpdateStatus(t *testing.T) {
 		{
 			name:   "repository returns context canceled",
 			jobID:  5,
-			status: "processing",
+			status: config.JobStatusRunning,
 			setupMock: func(m *mocks.JobRepoMock) {
-				m.On("UpdateStatus", mock.Anything, uint(5), "processing").
+				m.On("UpdateStatus", mock.Anything, uint(5), config.JobStatusRunning).
 					Return(context.Canceled)
 			},
 			setupCtx: func() context.Context {
@@ -549,9 +550,9 @@ func TestJobService_UpdateStatus(t *testing.T) {
 		{
 			name:   "repository returns context deadline exceeded",
 			jobID:  6,
-			status: "completed",
+			status: config.JobStatusCompleted,
 			setupMock: func(m *mocks.JobRepoMock) {
-				m.On("UpdateStatus", mock.Anything, uint(6), "completed").
+				m.On("UpdateStatus", mock.Anything, uint(6), config.JobStatusCompleted).
 					Return(context.DeadlineExceeded)
 			},
 			setupCtx: func() context.Context {
@@ -752,13 +753,13 @@ func TestJobService_SaveResult(t *testing.T) {
 
 func TestJobService_ListJobs(t *testing.T) {
 	jobs := []models.Job{
-		{ID: 1, Queue: "default", Type: "send_email", Status: "pending"},
-		{ID: 2, Queue: "default", Type: "process_payment", Status: "pending"},
+		{ID: 1, Queue: "default", Type: "send_email", Status: config.JobStatusQueued},
+		{ID: 2, Queue: "default", Type: "process_payment", Status: config.JobStatusQueued},
 	}
 
 	expectedDTOs := []dto.JobResponseDTO{
-		{ID: 1, Queue: "default", Type: "send_email", Status: "pending"},
-		{ID: 2, Queue: "default", Type: "process_payment", Status: "pending"},
+		{ID: 1, Queue: "default", Type: "send_email", Status: config.JobStatusQueued},
+		{ID: 2, Queue: "default", Type: "process_payment", Status: config.JobStatusQueued},
 	}
 
 	tests := []struct {

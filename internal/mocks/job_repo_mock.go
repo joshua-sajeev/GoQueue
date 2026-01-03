@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/joshu-sajeev/goqueue/internal/config"
 	"github.com/joshu-sajeev/goqueue/internal/models"
 	"github.com/stretchr/testify/mock"
 	"gorm.io/datatypes"
@@ -25,7 +26,7 @@ func (m *JobRepoMock) Get(ctx context.Context, id uint) (*models.Job, error) {
 	return job, args.Error(1)
 }
 
-func (m *JobRepoMock) UpdateStatus(ctx context.Context, id uint, status string) error {
+func (m *JobRepoMock) UpdateStatus(ctx context.Context, id uint, status config.JobStatus) error {
 	args := m.Called(ctx, id, status)
 	return args.Error(0)
 }

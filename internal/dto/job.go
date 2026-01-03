@@ -3,6 +3,8 @@ package dto
 import (
 	"encoding/json"
 	"time"
+
+	"github.com/joshu-sajeev/goqueue/internal/config"
 )
 
 type JobCreateDTO struct {
@@ -14,15 +16,15 @@ type JobCreateDTO struct {
 }
 
 type JobResponseDTO struct {
-	ID         uint            `json:"id"`
-	Queue      string          `json:"queue"`
-	Type       string          `json:"type"`
-	Payload    json.RawMessage `json:"payload"`
-	Status     string          `json:"status"`
-	Attempts   int             `json:"attempts"`
-	MaxRetries int             `json:"max_retries"`
-	Result     json.RawMessage `json:"result,omitempty"`
-	Error      string          `json:"error,omitempty"`
-	CreatedAt  time.Time       `json:"created_at"`
-	UpdatedAt  time.Time       `json:"updated_at"`
+	ID         uint             `json:"id"`
+	Queue      string           `json:"queue"`
+	Type       string           `json:"type"`
+	Payload    json.RawMessage  `json:"payload"`
+	Status     config.JobStatus `json:"status"`
+	Attempts   int              `json:"attempts"`
+	MaxRetries int              `json:"max_retries"`
+	Result     json.RawMessage  `json:"result,omitempty"`
+	Error      string           `json:"error,omitempty"`
+	CreatedAt  time.Time        `json:"created_at"`
+	UpdatedAt  time.Time        `json:"updated_at"`
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/joshu-sajeev/goqueue/internal/config"
 	"github.com/joshu-sajeev/goqueue/internal/job"
 	"github.com/joshu-sajeev/goqueue/internal/models"
 	"gorm.io/datatypes"
@@ -29,7 +30,7 @@ var _ job.JobRepoInterface = (*JobRepository)(nil)
 // database operation fails.
 func (r *JobRepository) Create(ctx context.Context, job *models.Job) error {
 	//TODO:Use constants
-	job.Status = "queued"
+	job.Status = config.JobStatusQueued
 	if job.AvailableAt.IsZero() {
 		job.AvailableAt = time.Now()
 	}
@@ -54,9 +55,9 @@ func (r *JobRepository) Get(ctx context.Context, id uint) (*models.Job, error) {
 }
 
 // UpdateStatus updates the status field of a job identified by id.
-// Common statuses include "pending", "processing", "completed", and "failed".
+// Common statuses include "queued", "running", "completed", and "failed".
 // Returns an error if the database operation fails.
-func (r *JobRepository) UpdateStatus(ctx context.Context, id uint, status string) error {
+func (r *JobRepository) UpdateStatus(ctx context.Context, id uint, status config.JobStatus) error {
 	if err := r.db.WithContext(ctx).Model(&models.Job{}).
 		Where("id = ?", id).
 		Update("status", status).Error; err != nil {
@@ -80,7 +81,7 @@ func (r *JobRepository) IncrementAttempts(ctx context.Context, id uint) error {
 
 // SaveResult persists the result and error message for a completed job.
 // Both fields are updated atomically in a single operation. Use this to
-// store job execution results after the job has finished processing.
+// store job execution results after the job has finished running.
 // Returns an error if the database operation fails.
 func (r *JobRepository) SaveResult(ctx context.Context, id uint, result datatypes.JSON, errMsg string) error {
 	if err := r.db.WithContext(ctx).Model(&models.Job{}).
@@ -95,7 +96,7 @@ func (r *JobRepository) SaveResult(ctx context.Context, id uint, result datatype
 }
 
 // List retrieves all jobs belonging to a specific queue. Useful for
-// fetching pending or processing jobs for a job worker. Returns a slice
+// fetching queued or running jobs for a job worker. Returns a slice
 // of jobs or an error if the database query fails.
 func (r *JobRepository) List(ctx context.Context, queue string) ([]models.Job, error) {
 	var jobs []models.Job
@@ -121,7 +122,7 @@ func (r *JobRepository) AcquireNext(ctx context.Context, queue string, workerID 
 		// - available_at <= now (ready to run)
 		// - (locked_at IS NULL OR locked_at < now - grace period)
 		query := tx.Where("queue = ?", queue).
-			Where("status = ?", "queued").
+			Where("status = ?", config.JobStatusQueued).
 			Where("available_at <= ?", now).
 			Where("(locked_at IS NULL OR locked_at < ?)", now.Add(-lockDuration)).
 			Order("available_at ASC, id ASC"). // FIFO + priority
@@ -139,7 +140,7 @@ func (r *JobRepository) AcquireNext(ctx context.Context, queue string, workerID 
 		return tx.Model(&job).Updates(map[string]any{
 			"locked_at": lockExpiry,
 			"locked_by": workerID,
-			"status":    "processing",
+			"status":    config.JobStatusRunning,
 		}).Error
 	})
 
@@ -157,7 +158,7 @@ func (r *JobRepository) Release(ctx context.Context, id uint) error {
 		Updates(map[string]any{
 			"locked_at": nil,
 			"locked_by": nil,
-			"status":    "queued",
+			"status":    config.JobStatusQueued,
 		}).Error; err != nil {
 		return fmt.Errorf("release job: %w", err)
 	}
@@ -169,7 +170,7 @@ func (r *JobRepository) RetryLater(ctx context.Context, id uint, availableAt tim
 	if err := r.db.WithContext(ctx).Model(&models.Job{}).
 		Where("id = ?", id).
 		Updates(map[string]any{
-			"status":       "queued",
+			"status":       config.JobStatusQueued,
 			"available_at": availableAt,
 			"locked_at":    nil,
 			"locked_by":    nil,
@@ -185,7 +186,7 @@ func (r *JobRepository) ListStuckJobs(ctx context.Context, staleDuration time.Du
 	cutoff := time.Now().Add(-staleDuration)
 
 	if err := r.db.WithContext(ctx).
-		Where("status = ?", "processing").
+		Where("status = ?", config.JobStatusRunning).
 		Where("locked_at < ?", cutoff).
 		Find(&jobs).Error; err != nil {
 		return nil, fmt.Errorf("list stuck jobs: %w", err)

@@ -162,7 +162,7 @@ func (s *JobService) GetJobByID(ctx context.Context, id uint) (*dto.JobResponseD
 // It validates request context, delegates the update to the repository,
 // and maps repository or context errors to appropriate API errors
 // (e.g., timeout or internal failure).
-func (s *JobService) UpdateStatus(ctx context.Context, id uint, status string) error {
+func (s *JobService) UpdateStatus(ctx context.Context, id uint, status config.JobStatus) error {
 	if err := ctx.Err(); err != nil {
 		return common.Errf(
 			http.StatusRequestTimeout,

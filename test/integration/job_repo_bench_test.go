@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/joshu-sajeev/goqueue/internal/config"
 	"github.com/joshu-sajeev/goqueue/internal/models"
 	"github.com/joshu-sajeev/goqueue/internal/storage/postgres"
 	"gorm.io/datatypes"
@@ -20,7 +21,7 @@ func BenchmarkJobRepository_Create(b *testing.B) {
 		Queue:      "bench",
 		Type:       "test_create",
 		Payload:    datatypes.JSON([]byte(`{"foo":"bar"}`)),
-		Status:     "pending",
+		Status:     config.JobStatusQueued,
 		Attempts:   0,
 		MaxRetries: 5,
 	}
@@ -39,7 +40,7 @@ func BenchmarkJobRepository_Get(b *testing.B) {
 	repo := postgres.NewJobRepository(db)
 
 	// Create a test job
-	job := &models.Job{Queue: "bench", Type: "test_get", Status: "pending"}
+	job := &models.Job{Queue: "bench", Type: "test_get", Status: config.JobStatusQueued}
 	_ = repo.Create(ctx, job)
 
 	for b.Loop() {
@@ -54,11 +55,11 @@ func BenchmarkJobRepository_UpdateStatus(b *testing.B) {
 
 	repo := postgres.NewJobRepository(db)
 
-	job := &models.Job{Queue: "bench", Type: "test_update_status", Status: "pending"}
+	job := &models.Job{Queue: "bench", Type: "test_update_status", Status: config.JobStatusQueued}
 	_ = repo.Create(ctx, job)
 
 	for b.Loop() {
-		_ = repo.UpdateStatus(ctx, job.ID, "processing")
+		_ = repo.UpdateStatus(ctx, job.ID, config.JobStatusRunning)
 	}
 }
 

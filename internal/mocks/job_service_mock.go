@@ -3,6 +3,7 @@ package mocks
 import (
 	"context"
 
+	"github.com/joshu-sajeev/goqueue/internal/config"
 	"github.com/joshu-sajeev/goqueue/internal/dto"
 	"github.com/stretchr/testify/mock"
 	"gorm.io/datatypes"
@@ -25,7 +26,7 @@ func (m *JobServiceMock) GetJobByID(ctx context.Context, id uint) (*dto.JobRespo
 	return args.Get(0).(*dto.JobResponseDTO), args.Error(1)
 }
 
-func (m *JobServiceMock) UpdateStatus(ctx context.Context, id uint, status string) error {
+func (m *JobServiceMock) UpdateStatus(ctx context.Context, id uint, status config.JobStatus) error {
 	args := m.Called(ctx, id, status)
 	return args.Error(0)
 }

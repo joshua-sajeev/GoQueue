@@ -1,103 +1,51 @@
-.PHONY: help up up-detach down logs \
-        migrate-status migrate-up migrate-down migrate-reset \
-        migrate-create db-connect reset-db \
-        test test-verbose bench bench-integration
-
-CONTAINER_NAME=goqueue_container
-POSTGRES_CONTAINER=postgres_container
-MIGRATIONS_DIR=./migrations
-ENV_FILE=deployments/.env
-
-# Load env variables
-include $(ENV_FILE)
-export $(shell sed 's/=.*//' $(ENV_FILE))
-
-# Construct DATABASE_URL from env variables
-DATABASE_URL=postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)?sslmode=disable
+.PHONY: help dev-up dev-down dev-logs api worker api-logs worker-logs clean test
 
 help:
 	@echo "Available commands:"
+	@echo "  make dev-up        - Start all services (API + Worker + Postgres)"
+	@echo "  make dev-down      - Stop all services"
+	@echo "  make dev-logs      - Follow logs for all services"
+	@echo "  make api-logs      - Follow logs for API service only"
+	@echo "  make worker-logs   - Follow logs for worker service only"
+	@echo "  make clean         - Remove tmp directories and build artifacts"
+	@echo "  make test          - Run tests"
 	@echo ""
-	@echo "Docker:"
-	@echo "  make up                  - Start Docker containers"
-	@echo "  make up-detach           - Start Docker containers in background"
-	@echo "  make down                - Stop Docker containers"
-	@echo "  make logs                - View container logs"
-	@echo "  make reset-db            - Delete Postgres volume (ALL DATA LOST)"
-	@echo ""
-	@echo "Database / Migrations:"
-	@echo "  make migrate-status      - Check migration status"
-	@echo "  make migrate-up          - Run pending migrations"
-	@echo "  make migrate-down        - Rollback last migration"
-	@echo "  make migrate-reset       - Rollback all migrations"
-	@echo "  make migrate-create NAME=x - Create new migration"
-	@echo "  make db-connect          - Connect to PostgreSQL shell"
-	@echo ""
-	@echo "Testing / Benchmarks:"
-	@echo "  make test                - Run all tests"
-	@echo "  make test-verbose        - Run tests with verbose output"
-	@echo "  make bench               - Run all benchmarks"
+	@echo "Local development (without Docker):"
+	@echo "  make api           - Run API with hot-reload locally"
+	@echo "  make worker        - Run worker with hot-reload locally"
 
-## ----------------------
-## Docker
-## ----------------------
-
-up:
+# Docker commands
+dev-up:
 	cd deployments && docker-compose -f docker-compose.dev.yml up
 
-up-detach:
-	cd deployments && docker-compose -f docker-compose.dev.yml up -d
-
-down:
+dev-down:
 	cd deployments && docker-compose -f docker-compose.dev.yml down
 
-logs:
+dev-logs:
 	cd deployments && docker-compose -f docker-compose.dev.yml logs -f
 
-reset-db:
-	@echo "⚠️  WARNING: This will DELETE the PostgreSQL volume and ALL data"
-	cd deployments && docker-compose -f docker-compose.dev.yml down -v
-	@echo "PostgreSQL volume deleted."
+api-logs:
+	cd deployments && docker-compose -f docker-compose.dev.yml logs -f goapp
 
-## ----------------------
-## Migrations
-## ----------------------
+worker-logs:
+	cd deployments && docker-compose -f docker-compose.dev.yml logs -f worker
 
-migrate-status:
-	docker exec $(CONTAINER_NAME) goose -dir $(MIGRATIONS_DIR) postgres "$(DATABASE_URL)" status
+# Local development (without Docker)
+api:
+	air -c .air-api.toml
 
-migrate-up:
-	docker exec $(CONTAINER_NAME) goose -dir $(MIGRATIONS_DIR) postgres "$(DATABASE_URL)" up
+worker:
+	air -c .air-worker.toml
 
-migrate-down:
-	docker exec $(CONTAINER_NAME) goose -dir $(MIGRATIONS_DIR) postgres "$(DATABASE_URL)" down
+# Cleanup
+clean:
+	rm -rf tmp/api tmp/worker
+	rm -f tmp/build-errors.log
 
-migrate-reset:
-	docker exec $(CONTAINER_NAME) goose -dir $(MIGRATIONS_DIR) postgres "$(DATABASE_URL)" reset
-
-migrate-create:
-	@if [ -z "$(NAME)" ]; then \
-		echo "Error: NAME not specified. Usage: make migrate-create NAME=table_name"; \
-		exit 1; \
-	fi
-	docker exec $(CONTAINER_NAME) goose -dir $(MIGRATIONS_DIR) create $(NAME) sql
-
-## ----------------------
-## Database
-## ----------------------
-
-db-connect:
-	docker exec -it $(POSTGRES_CONTAINER) psql -U $(POSTGRES_USER) -d $(POSTGRES_DB)
-
-## ----------------------
-## Testing & Benchmarks
-## ----------------------
-
+# Testing
 test:
-	go test ./...
-
-test-verbose:
 	go test -v ./...
 
-bench:
-	go test -bench=. -benchmem ./...
+test-coverage:
+	go test -v -coverprofile=coverage.out ./...
+	go tool cover -html=coverage.out

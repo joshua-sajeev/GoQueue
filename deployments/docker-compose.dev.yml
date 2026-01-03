@@ -21,7 +21,7 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile.dev
-    container_name: goqueue_container
+    container_name: goqueue_api_container
     image: goqueue_app:dev
     volumes:
       - ..:/app
@@ -30,10 +30,32 @@ services:
         condition: service_healthy
     env_file:
       - ./.env
+    environment:
+      - SERVICE_TYPE=api
     networks:
       - mynetwork
     ports:
       - "8080:8080"
+
+  worker:
+    build:
+      context: ..
+      dockerfile: Dockerfile.dev
+    container_name: goqueue_worker_container
+    image: goqueue_app:dev
+    volumes:
+      - ..:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      goapp:
+        condition: service_started
+    env_file:
+      - ./.env
+    environment:
+      - SERVICE_TYPE=worker
+    networks:
+      - mynetwork
 
 networks:
   mynetwork:

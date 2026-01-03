@@ -38,11 +38,8 @@ services:
       - "8080:8080"
 
   worker:
-    build:
-      context: ..
-      dockerfile: Dockerfile.dev
-    container_name: goqueue_worker_container
     image: goqueue_app:dev
+    container_name: goqueue_worker_container
     volumes:
       - ..:/app
     depends_on:

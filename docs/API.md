@@ -18,7 +18,7 @@ Currently, no authentication is required.
   "id": 1,
   "queue": "email",
   "type": "send_email",
-  "status": "pending"
+  "status": "queued"
 }
 ```
 
@@ -160,7 +160,7 @@ Retrieve a job by its ID.
     "subject": "Welcome",
     "body": "Hello World"
   },
-  "status": "pending",
+  "status": "queued",
   "attempts": 0,
   "max_retries": 3,
   "result": null,
@@ -205,12 +205,12 @@ Content-Type: application/json
 **Request Body:**
 ```json
 {
-  "status": "processing"
+  "status": "running"
 }
 ```
 
 **Parameters:**
-- `status` (string, required): New status. Common: `pending`, `processing`, `completed`, `failed`
+- `status` (string, required): New status. Common: `queued`, `running`, `completed`, `failed`
 
 **Response:** `204 No Content`
 
@@ -336,7 +336,7 @@ GET /jobs?queue=email
       "subject": "Welcome",
       "body": "Hello"
     },
-    "status": "pending",
+    "status": "queued",
     "attempts": 0,
     "max_retries": 3,
     "created_at": "2025-12-20T10:30:00Z",
@@ -544,11 +544,11 @@ curl -X POST http://localhost:8080/jobs/create \
 curl http://localhost:8080/jobs/1
 ```
 
-3. Update status to processing:
+3. Update status to running:
 ```bash
 curl -X PUT http://localhost:8080/jobs/1/status \
   -H "Content-Type: application/json" \
-  -d '{"status": "processing"}'
+  -d '{"status": "running"}'
 ```
 
 4. Increment attempts:

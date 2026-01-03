@@ -11,7 +11,7 @@
 - GET `/jobs/:id` - get job status
 - PUT `/jobs/:id/status` - update status
 - POST `/jobs/:id/increment` - increment retry attempts
-- POST `/jobs/:id/save` - save result after processing
+- POST `/jobs/:id/save` - save result after running
 - GET `/jobs?queue=name` - list jobs
 
 **Database (Working)**
@@ -94,7 +94,7 @@ POST /jobs/create
 ```
 1. BRPOP from Redis (blocking) → get job ID
 2. Fetch full job from PostgreSQL using ID
-3. Update status = "processing"
+3. Update status = "running"
 4. Run handler based on job.Type
 5. If success:
    - status = "completed"
@@ -102,7 +102,7 @@ POST /jobs/create
 6. If fail:
    - increment attempts
    - if attempts < max_retries:
-     - status = "pending"
+     - status = "queued"
      - push back to Redis with delay
    - else:
      - status = "failed"
@@ -219,7 +219,7 @@ func TestLoadJobs(t *testing.T) {
 
 ## After This Works
 
-Once workers are processing jobs, can add:
+Once workers are running jobs, can add:
 
 **Later (Phase 2):**
 - Scheduler service (cron jobs)

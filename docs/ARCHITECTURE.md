@@ -226,7 +226,7 @@ CREATE TABLE jobs (
     queue VARCHAR(255) NOT NULL,
     type VARCHAR(255) NOT NULL,
     payload JSONB,
-    status VARCHAR(50) NOT NULL DEFAULT 'pending',
+    status VARCHAR(50) NOT NULL DEFAULT 'queued',
     attempts INT NOT NULL DEFAULT 0,
     max_retries INT NOT NULL DEFAULT 5,
     result JSONB,
@@ -244,7 +244,7 @@ CREATE INDEX idx_jobs_status ON jobs(status);
 - `queue`: Queue name (default, email, webhooks)
 - `type`: Job type (send_email, process_payment, send_webhook)
 - `payload`: Job-specific data as JSONB
-- `status`: Current status (pending, processing, completed, failed)
+- `status`: Current status (queued, running, completed, failed)
 - `attempts`: Number of execution attempts
 - `max_retries`: Maximum allowed retries
 - `result`: Execution result as JSONB

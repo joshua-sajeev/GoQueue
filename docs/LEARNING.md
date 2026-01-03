@@ -128,7 +128,7 @@ job, _ := AcquireNext(ctx, "email", 1, 30*time.Second)
 
 | id  | status     | locked_at | locked_by |
 | --- | ---------- | --------- | --------- |
-| 1   | processing | 10:00:30  | worker 1  |
+| 1   | running | 10:00:30  | worker 1  |
 ###### Return value
 
 ```go
@@ -160,12 +160,12 @@ This prevents **double processing**.
 ---
 
 ##### Example scenario
-Worker 1 crashes while processing job 1.
+Worker 1 crashes while running job 1.
 ###### Job state (stuck)
 
 | id  | status     | locked_at | locked_by |
 | --- | ---------- | --------- | --------- |
-| 1   | processing | 10:00:30  | 1         |
+| 1   | running | 10:00:30  | 1         |
 
 Admin or reaper calls:
 
@@ -203,7 +203,7 @@ RetryLater(ctx, 2, time.Now().Add(2*time.Minute))
 
 | id  | status     | available_at |
 | --- | ---------- | ------------ |
-| 2   | processing | 10:01:00     |
+| 2   | running | 10:01:00     |
 
 ###### After retry
 
@@ -235,7 +235,7 @@ Worker `3` crashed and never released job 3.
 
 | id  | status     | locked_at |
 | --- | ---------- | --------- |
-| 3   | processing | 09:45:00  |
+| 3   | running | 09:45:00  |
 
 Reaper runs every minute:
 
@@ -275,13 +275,13 @@ Job is rescued automatically.
 ##### Normal success flow
 
 ```
-AcquireNext → process → completed
+AcquireNext → run → completed
 ```
 
 ##### Failure with retry
 
 ```
-AcquireNext → process → RetryLater → AcquireNext
+AcquireNext → run → RetryLater → AcquireNext
 ```
 
 ##### Worker crash recovery
@@ -349,7 +349,7 @@ Two workers could do this:
 | Time | Worker 1   | Worker 2      |
 | ---- | ---------- | ------------- |
 | t1   | Lock job 1 | waits         |
-| t2   | processing | still waiting |
+| t2   | running | still waiting |
 
 Worker 2 blocks → **throughput collapses**
 
@@ -406,7 +406,7 @@ locked_at < '09:59:30'
 
 1. Worker 1 locks job at `09:59:00`
 2. Worker 1 crashes
-3. Job remains `processing` forever
+3. Job remains `running` forever
 
 **Without this condition:**
 
@@ -424,3 +424,11 @@ This is called a **visibility timeout**.
 LockedBy    *uint
 ```
 We use a pointer because `0` can be a worker may be in future, by using a pointer I can make sure nil value or NULL for LockedBy means no worker is locking the job.
+
+# 2026-01-03
+**Use constants when:**
+- Values have semantic meaning in your code
+	- Example: job statuses, error codes, API endpoints.
+	- They are not just arbitrary text; they represent a concept
+-  Values are reused across multiple places
+- Type safety matters

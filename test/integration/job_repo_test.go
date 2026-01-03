@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/joshu-sajeev/goqueue/internal/config"
 	"github.com/joshu-sajeev/goqueue/internal/models"
 	"github.com/joshu-sajeev/goqueue/internal/storage/postgres"
 	"github.com/stretchr/testify/assert"
@@ -27,7 +28,7 @@ func TestJobRepository_Create(t *testing.T) {
 				Queue:      "email",
 				Type:       "send_email",
 				Payload:    datatypes.JSON([]byte(`{"email":"test@example.com","foo":"bar"}`)),
-				Status:     "queued",
+				Status:     config.JobStatusQueued,
 				Attempts:   0,
 				MaxRetries: 10,
 				Result:     datatypes.JSON([]byte(`{"status":"ok"}`)),
@@ -140,7 +141,7 @@ func TestJobRepository_Get(t *testing.T) {
 					Queue:      "email",
 					Type:       "send_email",
 					Payload:    datatypes.JSON([]byte(`{"email":"test@example.com","foo":"bar"}`)),
-					Status:     "done",
+					Status:     config.JobStatusCompleted,
 					Attempts:   0,
 					MaxRetries: 10,
 					Result:     datatypes.JSON([]byte(`{"status":"ok"}`)),
@@ -196,7 +197,7 @@ func TestJobRepository_Get(t *testing.T) {
 			assert.Equal(t, uint(1), got.ID)
 			assert.Equal(t, "email", got.Queue)
 			assert.Equal(t, "send_email", got.Type)
-			assert.Equal(t, "done", got.Status)
+			assert.Equal(t, config.JobStatusCompleted, got.Status)
 			assert.Equal(t, 0, got.Attempts)
 			assert.Equal(t, 10, got.MaxRetries)
 			assert.Equal(t, "s", got.Error)
@@ -219,7 +220,7 @@ func TestJobRepository_UpdateStatus(t *testing.T) {
 	tests := []struct {
 		name        string
 		id          uint
-		status      string
+		status      config.JobStatus
 		setup       func(db *gorm.DB)
 		wantErr     bool
 		errContains string
@@ -227,13 +228,13 @@ func TestJobRepository_UpdateStatus(t *testing.T) {
 		{
 			name:   "successfully update job status",
 			id:     1,
-			status: "processing",
+			status: config.JobStatusRunning,
 			setup: func(db *gorm.DB) {
 				db.Create(&models.Job{
 					ID:     1,
 					Queue:  "email",
 					Type:   "send_email",
-					Status: "pending",
+					Status: config.JobStatusQueued,
 				})
 			},
 			wantErr: false,
@@ -241,7 +242,7 @@ func TestJobRepository_UpdateStatus(t *testing.T) {
 		{
 			name:   "db failure during update",
 			id:     1,
-			status: "completed",
+			status: config.JobStatusCompleted,
 			setup: func(db *gorm.DB) {
 				sqlDB, _ := db.DB()
 				_ = sqlDB.Close()
@@ -622,7 +623,7 @@ func TestJobRepository_AcquireNext(t *testing.T) {
 			setup: func(db *gorm.DB) {
 				job := models.Job{
 					Queue:       "default",
-					Status:      "queued",
+					Status:      config.JobStatusQueued,
 					AvailableAt: now.Add(-time.Minute),
 				}
 				require.NoError(t, db.Create(&job).Error)
@@ -637,7 +638,7 @@ func TestJobRepository_AcquireNext(t *testing.T) {
 			setup: func(db *gorm.DB) {
 				job := models.Job{
 					Queue:       "default",
-					Status:      "queued",
+					Status:      config.JobStatusQueued,
 					AvailableAt: now.Add(time.Hour),
 				}
 				require.NoError(t, db.Create(&job).Error)
@@ -654,7 +655,7 @@ func TestJobRepository_AcquireNext(t *testing.T) {
 				lockedAt := now
 				job := models.Job{
 					Queue:       "default",
-					Status:      "queued",
+					Status:      config.JobStatusQueued,
 					AvailableAt: now.Add(-time.Minute),
 					LockedAt:    &lockedAt,
 					LockedBy:    ptrUint(1),
@@ -691,7 +692,7 @@ func TestJobRepository_AcquireNext(t *testing.T) {
 			var dbJob models.Job
 			require.NoError(t, db.First(&dbJob, job.ID).Error)
 
-			assert.Equal(t, "processing", dbJob.Status)
+			assert.Equal(t, config.JobStatusRunning, dbJob.Status)
 			assert.Equal(t, tt.workerID, *dbJob.LockedBy)
 			assert.NotNil(t, dbJob.LockedAt)
 			assert.True(t, dbJob.LockedAt.After(now))
@@ -716,7 +717,7 @@ func TestJobRepository_Release(t *testing.T) {
 			setup: func(db *gorm.DB) uint {
 				job := models.Job{
 					Queue:    "default",
-					Status:   "processing",
+					Status:   config.JobStatusRunning,
 					LockedAt: &now,
 					LockedBy: ptrUint(42),
 				}
@@ -752,7 +753,7 @@ func TestJobRepository_Release(t *testing.T) {
 
 			var job models.Job
 			if db.First(&job, id).Error == nil {
-				assert.Equal(t, "queued", job.Status)
+				assert.Equal(t, config.JobStatusQueued, job.Status)
 				assert.Nil(t, job.LockedBy)
 				assert.Nil(t, job.LockedAt)
 			}
@@ -773,7 +774,7 @@ func TestJobRepository_RetryLater(t *testing.T) {
 			setup: func(db *gorm.DB) uint {
 				job := models.Job{
 					Queue:    "default",
-					Status:   "processing",
+					Status:   config.JobStatusRunning,
 					LockedAt: &now,
 					LockedBy: ptrUint(1),
 				}
@@ -802,7 +803,7 @@ func TestJobRepository_RetryLater(t *testing.T) {
 
 			var job models.Job
 			if db.First(&job, id).Error == nil {
-				assert.Equal(t, "queued", job.Status)
+				assert.Equal(t, config.JobStatusQueued, job.Status)
 				assert.Nil(t, job.LockedBy)
 				assert.Nil(t, job.LockedAt)
 				assert.WithinDuration(t, availableAt, job.AvailableAt, time.Millisecond)
@@ -827,9 +828,9 @@ func TestJobRepository_ListStuckJobs(t *testing.T) {
 			setup: func(db *gorm.DB) {
 				old := now.Add(-2 * time.Hour)
 				jobs := []models.Job{
-					{Queue: "default", Status: "processing", LockedAt: &old},
-					{Queue: "default", Status: "processing", LockedAt: &old},
-					{Queue: "default", Status: "queued"},
+					{Queue: "default", Status: config.JobStatusRunning, LockedAt: &old},
+					{Queue: "default", Status: config.JobStatusRunning, LockedAt: &old},
+					{Queue: "default", Status: config.JobStatusQueued},
 				}
 				for _, j := range jobs {
 					require.NoError(t, db.Create(&j).Error)
@@ -841,7 +842,7 @@ func TestJobRepository_ListStuckJobs(t *testing.T) {
 		{
 			name: "no stuck jobs",
 			setup: func(db *gorm.DB) {
-				j := models.Job{Queue: "default", Status: "processing", LockedAt: &now}
+				j := models.Job{Queue: "default", Status: config.JobStatusRunning, LockedAt: &now}
 				require.NoError(t, db.Create(&j).Error)
 			},
 			stale:     time.Hour,

@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/joshu-sajeev/goqueue/common"
+	"github.com/joshu-sajeev/goqueue/internal/config"
 	"github.com/joshu-sajeev/goqueue/internal/dto"
 	"github.com/joshu-sajeev/goqueue/middleware"
 	"gorm.io/datatypes"
@@ -74,7 +75,7 @@ func (h *JobHandler) Update(c *gin.Context) {
 	}
 
 	var body struct {
-		Status string `json:"status" validate:"required"`
+		Status config.JobStatus `json:"status" validate:"required"`
 	}
 	if !middleware.Bind(c, &body) {
 		return

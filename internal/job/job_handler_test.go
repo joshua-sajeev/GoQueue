@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/joshu-sajeev/goqueue/common"
+	"github.com/joshu-sajeev/goqueue/internal/config"
 	"github.com/joshu-sajeev/goqueue/internal/dto"
 	"github.com/joshu-sajeev/goqueue/internal/mocks"
 	"github.com/joshu-sajeev/goqueue/middleware"
@@ -129,7 +130,7 @@ func TestJobHandler_Get(t *testing.T) {
 		Queue:      "email",
 		Type:       "send_email",
 		Payload:    json.RawMessage(`{"email":"test@example.com","subject":"Test"}`),
-		Status:     "pending",
+		Status:     config.JobStatusQueued,
 		Attempts:   0,
 		MaxRetries: 3,
 	}
@@ -148,7 +149,7 @@ func TestJobHandler_Get(t *testing.T) {
 				m.On("GetJobByID", mock.Anything, uint(1)).Return(validJobResponse, nil)
 			},
 			expectedStatus: http.StatusOK,
-			expectedBody:   `{"id":1,"queue":"email","type":"send_email","payload":{"email":"test@example.com","subject":"Test"},"status":"pending","attempts":0,"max_retries":3,"created_at":"0001-01-01T00:00:00Z","updated_at":"0001-01-01T00:00:00Z"}`,
+			expectedBody:   `{"id":1,"queue":"email","type":"send_email","payload":{"email":"test@example.com","subject":"Test"},"status":"queued","attempts":0,"max_retries":3,"created_at":"0001-01-01T00:00:00Z","updated_at":"0001-01-01T00:00:00Z"}`,
 		},
 		{
 			name:           "invalid ID param",
@@ -201,26 +202,26 @@ func TestJobHandler_Update(t *testing.T) {
 		{
 			name:  "successful update",
 			jobID: "1",
-			body:  `{"status":"processing"}`,
+			body:  `{"status":"running"}`,
 			setupMock: func(m *mocks.JobServiceMock) {
-				m.On("UpdateStatus", mock.Anything, uint(1), "processing").Return(nil)
+				m.On("UpdateStatus", mock.Anything, uint(1), config.JobStatusRunning).Return(nil)
 			},
 			expectedStatus: http.StatusNoContent,
 		},
 		{
 			name:           "invalid ID",
 			jobID:          "abc",
-			body:           `{"status":"processing"}`,
+			body:           `{"status":"running"}`,
 			setupMock:      func(m *mocks.JobServiceMock) {},
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
 			name:  "service error",
 			jobID: "1",
-			body:  `{"status":"processing"}`,
+			body:  `{"status":"running"}`,
 			setupMock: func(m *mocks.JobServiceMock) {
-				m.On("UpdateStatus", mock.Anything, uint(1), "processing").
-					Return(common.Errf(http.StatusInternalServerError, "failed"))
+				m.On("UpdateStatus", mock.Anything, uint(1), config.JobStatusRunning).
+					Return(common.Errf(http.StatusInternalServerError, "%s", string(config.JobStatusFailed)))
 			},
 			expectedStatus: http.StatusInternalServerError,
 		},
@@ -275,7 +276,7 @@ func TestJobHandler_Increment(t *testing.T) {
 			jobID: "1",
 			setupMock: func(m *mocks.JobServiceMock) {
 				m.On("IncrementAttempts", mock.Anything, uint(1)).
-					Return(common.Errf(http.StatusInternalServerError, "failed"))
+					Return(common.Errf(http.StatusInternalServerError, "%s", string(config.JobStatusFailed)))
 			},
 			expectedStatus: http.StatusInternalServerError,
 		},
@@ -333,7 +334,7 @@ func TestJobHandler_Save(t *testing.T) {
 			body:  `{"result":{"ok":true},"error":""}`,
 			setupMock: func(m *mocks.JobServiceMock) {
 				m.On("SaveResult", mock.Anything, uint(1), mock.Anything, "").
-					Return(common.Errf(http.StatusInternalServerError, "failed"))
+					Return(common.Errf(http.StatusInternalServerError, "%s", string(config.JobStatusFailed)))
 			},
 			expectedStatus: http.StatusInternalServerError,
 		},
@@ -365,7 +366,7 @@ func TestJobHandler_List(t *testing.T) {
 
 	expectedDTOs := []dto.JobResponseDTO{
 		{
-			ID: 1, Queue: "default", Type: "send_email", Status: "pending",
+			ID: 1, Queue: "default", Type: "send_email", Status: config.JobStatusQueued,
 			Payload:    json.RawMessage(`{}`),
 			Attempts:   0,
 			MaxRetries: 0,
@@ -373,7 +374,7 @@ func TestJobHandler_List(t *testing.T) {
 			UpdatedAt:  time.Time{},
 		},
 		{
-			ID: 2, Queue: "default", Type: "process_payment", Status: "pending",
+			ID: 2, Queue: "default", Type: "process_payment", Status: config.JobStatusQueued,
 			Payload:    json.RawMessage(`{}`),
 			Attempts:   0,
 			MaxRetries: 0,
@@ -414,8 +415,8 @@ func TestJobHandler_List(t *testing.T) {
 			},
 			expectedStatus: 200,
 			expectedBody: `[
-				{"id":1,"queue":"default","type":"send_email","status":"pending","payload":{},"attempts":0,"max_retries":0,"created_at":"0001-01-01T00:00:00Z","updated_at":"0001-01-01T00:00:00Z"},
-				{"id":2,"queue":"default","type":"process_payment","status":"pending","payload":{},"attempts":0,"max_retries":0,"created_at":"0001-01-01T00:00:00Z","updated_at":"0001-01-01T00:00:00Z"}
+				{"id":1,"queue":"default","type":"send_email","status":"queued","payload":{},"attempts":0,"max_retries":0,"created_at":"0001-01-01T00:00:00Z","updated_at":"0001-01-01T00:00:00Z"},
+				{"id":2,"queue":"default","type":"process_payment","status":"queued","payload":{},"attempts":0,"max_retries":0,"created_at":"0001-01-01T00:00:00Z","updated_at":"0001-01-01T00:00:00Z"}
 			]`,
 		},
 	}

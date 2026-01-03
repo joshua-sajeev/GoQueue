@@ -4,6 +4,7 @@ package models
 import (
 	"time"
 
+	"github.com/joshu-sajeev/goqueue/internal/config"
 	"gorm.io/datatypes"
 )
 
@@ -13,7 +14,7 @@ type Job struct {
 	Type    string
 	Payload datatypes.JSON
 
-	Status     string
+	Status     config.JobStatus
 	Attempts   int
 	MaxRetries int
 

@@ -132,7 +132,6 @@ job, _ := AcquireNext(ctx, "email", 1, 30*time.Second)
 ###### Return value
 
 ```go
-//TODO:
 Job{ID: 1, Queue: "email"}
 ```
 

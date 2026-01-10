@@ -24,6 +24,7 @@ type JobRepoInterface interface {
 	Release(ctx context.Context, id uint) error
 	RetryLater(ctx context.Context, id uint, availableAt time.Time) error
 	ListStuckJobs(ctx context.Context, staleDuration time.Duration) ([]models.Job, error)
+	MarkCompleted(ctx context.Context, id uint, result datatypes.JSON) error
 }
 
 // JobServiceInterface defines the contract for job business logic operations.

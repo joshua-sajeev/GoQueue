@@ -20,11 +20,6 @@
 - Repository pattern for database operations
 - Tests with dockertest
 
-**Job Types**
-- send_email - email jobs
-- process_payment - payment jobs
-- send_webhook - webhook jobs
-
 **Project Structure**
 ```
 cmd/api/          - API server
@@ -95,7 +90,7 @@ POST /jobs/create
 1. BRPOP from Redis (blocking) → get job ID
 2. Fetch full job from PostgreSQL using ID
 3. Update status = "running"
-4. Run handler based on job.Type
+4. Run handler based on job.Queue
 5. If success:
    - status = "completed"
    - save result
@@ -117,7 +112,7 @@ cmd/worker/
 internal/worker/
   worker.go              - main worker loop
   handlers.go            - send_email, process_payment, send_webhook
-  registry.go            - map job types to handlers
+  registry.go            - map queue to handlers
 ```
 
 **Handler example:**
@@ -159,11 +154,11 @@ worker:
 **Metrics to add:**
 ```
 API:
-- jobs_created_total{queue, type}
+- jobs_created_total{queue}
 - http_request_duration_seconds
 
 Worker:
-- jobs_processed_total{queue, type, status}
+- jobs_processed_total{queue, status}
 - job_duration_seconds
 - queue_depth{queue}
 ```

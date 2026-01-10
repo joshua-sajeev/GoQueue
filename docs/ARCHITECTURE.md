@@ -64,7 +64,7 @@ goqueue/
 │   └── scheduler/        # Scheduler Service - separate binary (planned)
 ├── internal/             # Shared internal code
 │   ├── config/           # Configuration constants
-│   │   └── constants.go  # Allowed queues and job types
+│   │   └── constants.go  # Allowed queues
 │   ├── dto/              # Data Transfer Objects
 │   │   ├── email.go      # Email job payload
 │   │   ├── payment.go    # Payment job payload
@@ -135,8 +135,8 @@ func (h *JobHandler) Create(c *gin.Context) {
 
 **Responsibilities:**
 - Business logic validation
-- Queue and job type validation
-- Payload validation by type
+- Queue validation
+- Payload validation by queue
 - Context handling (timeout, cancellation)
 - Error mapping
 
@@ -150,7 +150,7 @@ func (h *JobHandler) Create(c *gin.Context) {
 ```go
 func (s *JobService) CreateJob(ctx context.Context, dto *dto.JobCreateDTO) error {
     // Validate queue and type
-    // Validate payload based on type
+    // Validate payload based on queue
     // Create model
     // Call repository
 }
@@ -189,7 +189,7 @@ func (r *JobRepository) Create(ctx context.Context, job *models.Job) error {
    ↓
 3. Service validates business rules
    ↓
-4. Service validates payload by job type
+4. Service validates payload by queue
    ↓
 5. Service creates Job model
    ↓
@@ -224,7 +224,6 @@ func (r *JobRepository) Create(ctx context.Context, job *models.Job) error {
 CREATE TABLE jobs (
     id BIGSERIAL PRIMARY KEY,
     queue VARCHAR(255) NOT NULL,
-    type VARCHAR(255) NOT NULL,
     payload JSONB,
     status VARCHAR(50) NOT NULL DEFAULT 'queued',
     attempts INT NOT NULL DEFAULT 0,
@@ -242,7 +241,6 @@ CREATE INDEX idx_jobs_status ON jobs(status);
 **Fields:**
 - `id`: Auto-incrementing primary key
 - `queue`: Queue name (default, email, webhooks)
-- `type`: Job type (send_email, process_payment, send_webhook)
 - `payload`: Job-specific data as JSONB
 - `status`: Current status (queued, running, completed, failed)
 - `attempts`: Number of execution attempts
@@ -263,13 +261,6 @@ CREATE INDEX idx_jobs_status ON jobs(status);
 AllowedQueues = []string{"default", "email", "webhooks"}
 ```
 
-### Allowed Job Types
-
-**Location:** `internal/config/constants.go`
-
-```go
-AllowedJobTypes = []string{"send_email", "process_payment", "send_webhook"}
-```
 
 ### Environment Variables
 
@@ -345,26 +336,11 @@ Uses struct tags with go-playground/validator:
 ```go
 type JobCreateDTO struct {
     Queue      string          `json:"queue" validate:"required"`
-    Type       string          `json:"type" validate:"required"`
     Payload    json.RawMessage `json:"payload" validate:"required"`
     MaxRetries int             `json:"max_retries" validate:"gte=0,lte=20"`
 }
 ```
 
-### Payload Validation
-
-Type-specific validation in service layer:
-
-```go
-switch dto.Type {
-case "send_email":
-    err := s.validateSendEmailPayload(dto.Payload)
-case "process_payment":
-    err := s.validateProcessPaymentPayload(dto.Payload)
-case "send_webhook":
-    err := s.validateSendWebhookPayload(dto.Payload)
-}
-```
 
 ## Future Architecture (Phase 2+)
 

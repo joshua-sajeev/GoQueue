@@ -29,7 +29,7 @@ func TestJobHandler_Create(t *testing.T) {
 	}{
 		{
 			name: "successful job creation",
-			body: `{"queue":"default","type":"send_email","payload":{"email":"test@example.com","subject":"Test"},"maxRetries":3}`,
+			body: `{"queue":"default","payload":{"email":"test@example.com","subject":"Test"},"maxRetries":3}`,
 			setupMock: func(m *mocks.JobServiceMock) {
 				m.On("CreateJob", mock.Anything, mock.Anything).Return(nil)
 			},
@@ -44,7 +44,7 @@ func TestJobHandler_Create(t *testing.T) {
 		},
 		{
 			name: "invalid JSON payload",
-			body: `{"queue":"default","type":"send_email","payload":"{invalid}"}`,
+			body: `{"queue":"default","payload":"{invalid}"}`,
 			setupMock: func(m *mocks.JobServiceMock) {
 				m.On("CreateJob", mock.Anything, mock.Anything).
 					Return(common.Errf(http.StatusBadRequest, "payload must be valid JSON"))
@@ -53,7 +53,7 @@ func TestJobHandler_Create(t *testing.T) {
 		},
 		{
 			name: "invalid queue",
-			body: `{"queue":"invalid_queue","type":"send_email","payload":{"test":true}}`,
+			body: `{"queue":"invalid_queue","payload":{"test":true}}`,
 			setupMock: func(m *mocks.JobServiceMock) {
 				m.On("CreateJob", mock.Anything, mock.Anything).
 					Return(common.NewAPIError(http.StatusBadRequest, "invalid queue", map[string]any{
@@ -63,22 +63,10 @@ func TestJobHandler_Create(t *testing.T) {
 			},
 			expectedStatus: http.StatusBadRequest,
 		},
-		{
-			name: "invalid job type",
-			body: `{"queue":"default","type":"invalid_type","payload":{"test":true}}`,
-			setupMock: func(m *mocks.JobServiceMock) {
-				m.On("CreateJob", mock.Anything, mock.Anything).
-					Return(common.NewAPIError(http.StatusBadRequest, "invalid job type", map[string]any{
-						"provided": "invalid_type",
-						"allowed":  []string{"send_email", "process_payment", "generate_report", "send_webhook"},
-					}))
-			},
-			expectedStatus: http.StatusBadRequest,
-		},
 
 		{
 			name: "database connection error",
-			body: `{"queue":"default","type":"send_email","payload":{"test":true}}`,
+			body: `{"queue":"default","payload":{"test":true}}`,
 			setupMock: func(m *mocks.JobServiceMock) {
 				m.On("CreateJob", mock.Anything, mock.Anything).
 					Return(common.Errf(http.StatusInternalServerError, "failed to add job to database: database connection failed"))
@@ -128,7 +116,6 @@ func TestJobHandler_Get(t *testing.T) {
 	validJobResponse := &dto.JobResponseDTO{
 		ID:         1,
 		Queue:      "email",
-		Type:       "send_email",
 		Payload:    json.RawMessage(`{"email":"test@example.com","subject":"Test"}`),
 		Status:     config.JobStatusQueued,
 		Attempts:   0,
@@ -149,7 +136,7 @@ func TestJobHandler_Get(t *testing.T) {
 				m.On("GetJobByID", mock.Anything, uint(1)).Return(validJobResponse, nil)
 			},
 			expectedStatus: http.StatusOK,
-			expectedBody:   `{"id":1,"queue":"email","type":"send_email","payload":{"email":"test@example.com","subject":"Test"},"status":"queued","attempts":0,"max_retries":3,"created_at":"0001-01-01T00:00:00Z","updated_at":"0001-01-01T00:00:00Z"}`,
+			expectedBody:   `{"id":1,"queue":"email","payload":{"email":"test@example.com","subject":"Test"},"status":"queued","attempts":0,"max_retries":3,"created_at":"0001-01-01T00:00:00Z","updated_at":"0001-01-01T00:00:00Z"}`,
 		},
 		{
 			name:           "invalid ID param",
@@ -366,7 +353,7 @@ func TestJobHandler_List(t *testing.T) {
 
 	expectedDTOs := []dto.JobResponseDTO{
 		{
-			ID: 1, Queue: "default", Type: "send_email", Status: config.JobStatusQueued,
+			ID: 1, Queue: "default",  Status: config.JobStatusQueued,
 			Payload:    json.RawMessage(`{}`),
 			Attempts:   0,
 			MaxRetries: 0,
@@ -374,7 +361,7 @@ func TestJobHandler_List(t *testing.T) {
 			UpdatedAt:  time.Time{},
 		},
 		{
-			ID: 2, Queue: "default", Type: "process_payment", Status: config.JobStatusQueued,
+			ID: 2, Queue: "default",  Status: config.JobStatusQueued,
 			Payload:    json.RawMessage(`{}`),
 			Attempts:   0,
 			MaxRetries: 0,
@@ -415,8 +402,8 @@ func TestJobHandler_List(t *testing.T) {
 			},
 			expectedStatus: 200,
 			expectedBody: `[
-				{"id":1,"queue":"default","type":"send_email","status":"queued","payload":{},"attempts":0,"max_retries":0,"created_at":"0001-01-01T00:00:00Z","updated_at":"0001-01-01T00:00:00Z"},
-				{"id":2,"queue":"default","type":"process_payment","status":"queued","payload":{},"attempts":0,"max_retries":0,"created_at":"0001-01-01T00:00:00Z","updated_at":"0001-01-01T00:00:00Z"}
+				{"id":1,"queue":"default","status":"queued","payload":{},"attempts":0,"max_retries":0,"created_at":"0001-01-01T00:00:00Z","updated_at":"0001-01-01T00:00:00Z"},
+				{"id":2,"queue":"default","status":"queued","payload":{},"attempts":0,"max_retries":0,"created_at":"0001-01-01T00:00:00Z","updated_at":"0001-01-01T00:00:00Z"}
 			]`,
 		},
 	}

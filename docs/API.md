@@ -17,7 +17,6 @@ Currently, no authentication is required.
 {
   "id": 1,
   "queue": "email",
-  "type": "send_email",
   "status": "queued"
 }
 ```
@@ -88,7 +87,6 @@ Content-Type: application/json
 ```json
 {
   "queue": "email",
-  "type": "send_email",
   "payload": {
     "to": "user@example.com",
     "subject": "Welcome",
@@ -100,15 +98,13 @@ Content-Type: application/json
 
 **Parameters:**
 - `queue` (string, required): Queue name. Allowed: `default`, `email`, `webhooks`
-- `type` (string, required): Job type. Allowed: `send_email`, `process_payment`, `send_webhook`
-- `payload` (object, required): Job-specific payload (see Job Types section)
+- `payload` (object, required): Job-specific payload 
 - `max_retries` (integer, optional): Maximum retry attempts (0-20). Default: 3
 
 **Response:** `201 Created`
 ```json
 {
   "queue": "email",
-  "type": "send_email",
   "payload": {
     "to": "user@example.com",
     "subject": "Welcome",
@@ -154,7 +150,6 @@ Retrieve a job by its ID.
 {
   "id": 1,
   "queue": "email",
-  "type": "send_email",
   "payload": {
     "to": "user@example.com",
     "subject": "Welcome",
@@ -330,7 +325,6 @@ GET /jobs?queue=email
   {
     "id": 1,
     "queue": "email",
-    "type": "send_email",
     "payload": {
       "to": "user1@example.com",
       "subject": "Welcome",
@@ -363,12 +357,12 @@ GET /jobs?queue=email
 
 ---
 
-## Job Types and Payloads
 
+## Job Queues and Payloads
 ### 1. Send Email
 
-**Type:** `send_email`  
 **Queue:** `email`
+**Queue:** `default`
 
 **Payload Schema:**
 ```json
@@ -390,7 +384,6 @@ curl -X POST http://localhost:8080/jobs/create \
   -H "Content-Type: application/json" \
   -d '{
     "queue": "email",
-    "type": "send_email",
     "payload": {
       "to": "user@example.com",
       "subject": "Welcome to GoQueue",
@@ -402,10 +395,9 @@ curl -X POST http://localhost:8080/jobs/create \
 
 ---
 
-### 2. Process Payment
+### 2. Payment
 
-**Type:** `process_payment`  
-**Queue:** `default`
+**Queue:** `payment`
 
 **Payload Schema:**
 ```json
@@ -430,8 +422,7 @@ curl -X POST http://localhost:8080/jobs/create \
 curl -X POST http://localhost:8080/jobs/create \
   -H "Content-Type: application/json" \
   -d '{
-    "queue": "default",
-    "type": "process_payment",
+    "queue": "payment",
     "payload": {
       "payment_id": "pay_123456",
       "user_id": "user_789",
@@ -445,9 +436,8 @@ curl -X POST http://localhost:8080/jobs/create \
 
 ---
 
-### 3. Send Webhook
+### 3. Webhook
 
-**Type:** `send_webhook`  
 **Queue:** `webhooks`
 
 **Payload Schema:**
@@ -480,7 +470,6 @@ curl -X POST http://localhost:8080/jobs/create \
   -H "Content-Type: application/json" \
   -d '{
     "queue": "webhooks",
-    "type": "send_webhook",
     "payload": {
       "url": "https://example.com/webhook",
       "method": "POST",
@@ -530,7 +519,6 @@ curl -X POST http://localhost:8080/jobs/create \
   -H "Content-Type: application/json" \
   -d '{
     "queue": "email",
-    "type": "send_email",
     "payload": {
       "to": "user@example.com",
       "subject": "Test",

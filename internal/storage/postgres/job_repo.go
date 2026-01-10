@@ -152,7 +152,6 @@ func (r *JobRepository) AcquireNext(ctx context.Context, queue string, workerID 
 	return &dto.JobDTO{
 		ID:      job.ID,
 		Queue:   job.Queue,
-		Type:    job.Type,
 		Payload: job.Payload,
 	}, nil
 }

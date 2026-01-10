@@ -55,14 +55,12 @@ func TestJobService_CreateJob(t *testing.T) {
 			name: "successful job creation with default max retries",
 			dto: &dto.JobCreateDTO{
 				Queue:      "default",
-				Type:       "send_email",
 				Payload:    validPayload,
 				MaxRetries: 0,
 			},
 			setupMock: func(m *mocks.JobRepoMock) {
 				m.On("Create", mock.Anything, mock.MatchedBy(func(job *models.Job) bool {
 					return job.Queue == "default" &&
-						job.Type == "send_email" &&
 						job.MaxRetries == 3 &&
 						job.Attempts == 0
 				})).Return(nil)
@@ -76,14 +74,12 @@ func TestJobService_CreateJob(t *testing.T) {
 			name: "successful job creation with custom max retries",
 			dto: &dto.JobCreateDTO{
 				Queue:      "email",
-				Type:       "send_email",
 				Payload:    validPayload,
 				MaxRetries: 5,
 			},
 			setupMock: func(m *mocks.JobRepoMock) {
 				m.On("Create", mock.Anything, mock.MatchedBy(func(job *models.Job) bool {
 					return job.Queue == "email" &&
-						job.Type == "send_email" &&
 						job.MaxRetries == 5
 				})).Return(nil)
 			},
@@ -96,7 +92,6 @@ func TestJobService_CreateJob(t *testing.T) {
 			name: "invalid JSON payload",
 			dto: &dto.JobCreateDTO{
 				Queue:   "default",
-				Type:    "send_email",
 				Payload: invalidPayload,
 			},
 			setupMock: func(m *mocks.JobRepoMock) {},
@@ -111,7 +106,6 @@ func TestJobService_CreateJob(t *testing.T) {
 			name: "invalid queue",
 			dto: &dto.JobCreateDTO{
 				Queue:   "invalid_queue",
-				Type:    "send_email",
 				Payload: validPayload,
 			},
 			setupMock: func(m *mocks.JobRepoMock) {},
@@ -122,41 +116,38 @@ func TestJobService_CreateJob(t *testing.T) {
 			errContains:  "invalid queue",
 			skipRepoCall: true,
 		},
-		{
-			name: "invalid job type",
-			dto: &dto.JobCreateDTO{
-				Queue:   "default",
-				Type:    "invalid_type",
-				Payload: validPayload,
-			},
-			setupMock: func(m *mocks.JobRepoMock) {},
-			setupCtx: func() context.Context {
-				return context.Background()
-			},
-			wantErr:      true,
-			errContains:  "invalid job type",
-			skipRepoCall: true,
-		},
-		{
-			name: "empty job type",
-			dto: &dto.JobCreateDTO{
-				Queue:   "default",
-				Type:    "",
-				Payload: validPayload,
-			},
-			setupMock: func(m *mocks.JobRepoMock) {},
-			setupCtx: func() context.Context {
-				return context.Background()
-			},
-			wantErr:      true,
-			errContains:  "invalid job type",
-			skipRepoCall: true,
-		},
+		// {
+		// 	name: "invalid job type",
+		// 	dto: &dto.JobCreateDTO{
+		// 		Queue:   "default",
+		// 		Payload: validPayload,
+		// 	},
+		// 	setupMock: func(m *mocks.JobRepoMock) {},
+		// 	setupCtx: func() context.Context {
+		// 		return context.Background()
+		// 	},
+		// 	wantErr:      true,
+		// 	errContains:  "invalid job type",
+		// 	skipRepoCall: true,
+		// },
+		// {
+		// 	name: "empty job type",
+		// 	dto: &dto.JobCreateDTO{
+		// 		Queue:   "default",
+		// 		Payload: validPayload,
+		// 	},
+		// 	setupMock: func(m *mocks.JobRepoMock) {},
+		// 	setupCtx: func() context.Context {
+		// 		return context.Background()
+		// 	},
+		// 	wantErr:      true,
+		// 	errContains:  "invalid job type",
+		// 	skipRepoCall: true,
+		// },
 		{
 			name: "valid queue - webhooks",
 			dto: &dto.JobCreateDTO{
 				Queue:   "webhooks",
-				Type:    "send_webhook",
 				Payload: validWebhookPayload,
 			},
 			setupMock: func(m *mocks.JobRepoMock) {
@@ -168,10 +159,9 @@ func TestJobService_CreateJob(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "valid job type - process_payment",
+			name: "valid queue type - payment",
 			dto: &dto.JobCreateDTO{
-				Queue:   "default",
-				Type:    "process_payment",
+				Queue:   "payment",
 				Payload: validPaymentPayload,
 			},
 			setupMock: func(m *mocks.JobRepoMock) {
@@ -186,7 +176,6 @@ func TestJobService_CreateJob(t *testing.T) {
 			name: "empty JSON object payload",
 			dto: &dto.JobCreateDTO{
 				Queue:   "default",
-				Type:    "send_email",
 				Payload: []byte(`{}`),
 			},
 			setupMock: func(m *mocks.JobRepoMock) {},
@@ -200,7 +189,6 @@ func TestJobService_CreateJob(t *testing.T) {
 			name: "JSON primitive payloads",
 			dto: &dto.JobCreateDTO{
 				Queue:   "default",
-				Type:    "send_email",
 				Payload: []byte(`123`),
 			},
 			setupMock: func(m *mocks.JobRepoMock) {},
@@ -214,7 +202,6 @@ func TestJobService_CreateJob(t *testing.T) {
 			name: "JSON with special characters",
 			dto: &dto.JobCreateDTO{
 				Queue:   "default",
-				Type:    "send_email",
 				Payload: []byte(`{"message":"Hello \"World\"\nNew line\tTab"}`),
 			},
 			setupMock: func(m *mocks.JobRepoMock) {},
@@ -228,7 +215,6 @@ func TestJobService_CreateJob(t *testing.T) {
 			name: "max retries set to 1",
 			dto: &dto.JobCreateDTO{
 				Queue:      "default",
-				Type:       "send_email",
 				Payload:    validPayload,
 				MaxRetries: 1,
 			},
@@ -246,7 +232,6 @@ func TestJobService_CreateJob(t *testing.T) {
 			name: "max retries set to high number",
 			dto: &dto.JobCreateDTO{
 				Queue:      "default",
-				Type:       "send_email",
 				Payload:    validPayload,
 				MaxRetries: 100,
 			},
@@ -264,7 +249,6 @@ func TestJobService_CreateJob(t *testing.T) {
 			name: "repository error - database failure",
 			dto: &dto.JobCreateDTO{
 				Queue:   "default",
-				Type:    "send_email",
 				Payload: validPayload,
 			},
 			setupMock: func(m *mocks.JobRepoMock) {
@@ -282,7 +266,6 @@ func TestJobService_CreateJob(t *testing.T) {
 			name: "context canceled - repo returns cancellation error",
 			dto: &dto.JobCreateDTO{
 				Queue:   "default",
-				Type:    "send_email",
 				Payload: validPayload,
 			},
 			setupMock: func(m *mocks.JobRepoMock) {
@@ -299,7 +282,6 @@ func TestJobService_CreateJob(t *testing.T) {
 			name: "context deadline exceeded - repo returns deadline error",
 			dto: &dto.JobCreateDTO{
 				Queue:   "default",
-				Type:    "send_email",
 				Payload: validPayload,
 			},
 			setupMock: func(m *mocks.JobRepoMock) {
@@ -345,7 +327,6 @@ func TestJobService_GetJobByID(t *testing.T) {
 	validJob := &dto.JobResponseDTO{
 		ID:         1,
 		Queue:      "email",
-		Type:       "send_email",
 		Status:     config.JobStatusQueued,
 		Attempts:   0,
 		MaxRetries: 3,
@@ -370,7 +351,6 @@ func TestJobService_GetJobByID(t *testing.T) {
 					Return(&models.Job{
 						ID:         1,
 						Queue:      "email",
-						Type:       "send_email",
 						Status:     config.JobStatusQueued,
 						Attempts:   0,
 						MaxRetries: 3,
@@ -422,7 +402,6 @@ func TestJobService_GetJobByID(t *testing.T) {
 					Return(&models.Job{
 						ID:         1,
 						Queue:      "email",
-						Type:       "send_email",
 						Status:     config.JobStatusQueued,
 						Attempts:   0,
 						MaxRetries: 3,
@@ -753,13 +732,13 @@ func TestJobService_SaveResult(t *testing.T) {
 
 func TestJobService_ListJobs(t *testing.T) {
 	jobs := []models.Job{
-		{ID: 1, Queue: "default", Type: "send_email", Status: config.JobStatusQueued},
-		{ID: 2, Queue: "default", Type: "process_payment", Status: config.JobStatusQueued},
+		{ID: 1, Queue: "default", Status: config.JobStatusQueued},
+		{ID: 2, Queue: "default", Status: config.JobStatusQueued},
 	}
 
 	expectedDTOs := []dto.JobResponseDTO{
-		{ID: 1, Queue: "default", Type: "send_email", Status: config.JobStatusQueued},
-		{ID: 2, Queue: "default", Type: "process_payment", Status: config.JobStatusQueued},
+		{ID: 1, Queue: "default", Status: config.JobStatusQueued},
+		{ID: 2, Queue: "default", Status: config.JobStatusQueued},
 	}
 
 	tests := []struct {

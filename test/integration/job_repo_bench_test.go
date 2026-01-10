@@ -19,7 +19,6 @@ func BenchmarkJobRepository_Create(b *testing.B) {
 
 	job := &models.Job{
 		Queue:      "bench",
-		Type:       "test_create",
 		Payload:    datatypes.JSON([]byte(`{"foo":"bar"}`)),
 		Status:     config.JobStatusQueued,
 		Attempts:   0,
@@ -40,7 +39,7 @@ func BenchmarkJobRepository_Get(b *testing.B) {
 	repo := postgres.NewJobRepository(db)
 
 	// Create a test job
-	job := &models.Job{Queue: "bench", Type: "test_get", Status: config.JobStatusQueued}
+	job := &models.Job{Queue: "bench", Status: config.JobStatusQueued}
 	_ = repo.Create(ctx, job)
 
 	for b.Loop() {
@@ -55,7 +54,7 @@ func BenchmarkJobRepository_UpdateStatus(b *testing.B) {
 
 	repo := postgres.NewJobRepository(db)
 
-	job := &models.Job{Queue: "bench", Type: "test_update_status", Status: config.JobStatusQueued}
+	job := &models.Job{Queue: "bench", Status: config.JobStatusQueued}
 	_ = repo.Create(ctx, job)
 
 	for b.Loop() {
@@ -70,7 +69,7 @@ func BenchmarkJobRepository_IncrementAttempts(b *testing.B) {
 
 	repo := postgres.NewJobRepository(db)
 
-	job := &models.Job{Queue: "bench", Type: "test_increment", Attempts: 0}
+	job := &models.Job{Queue: "bench", Attempts: 0}
 	_ = repo.Create(ctx, job)
 
 	for b.Loop() {
@@ -85,7 +84,7 @@ func BenchmarkJobRepository_SaveResult(b *testing.B) {
 
 	repo := postgres.NewJobRepository(db)
 
-	job := &models.Job{Queue: "bench", Type: "test_save_result"}
+	job := &models.Job{Queue: "bench"}
 	_ = repo.Create(ctx, job)
 
 	resultJSON := datatypes.JSON([]byte(`{"status":"ok"}`))
@@ -105,7 +104,7 @@ func BenchmarkJobRepository_List(b *testing.B) {
 
 	// Create multiple jobs for the queue
 	for range 100 {
-		_ = repo.Create(ctx, &models.Job{Queue: "bench_list", Type: "test_list"})
+		_ = repo.Create(ctx, &models.Job{Queue: "bench_list"})
 	}
 
 	for b.Loop() {
@@ -123,7 +122,7 @@ func BenchmarkJobRepository_GetWithJSONUnmarshal(b *testing.B) {
 
 	payload := datatypes.JSON([]byte(`{"email":"test@example.com","foo":"bar"}`))
 	result := datatypes.JSON([]byte(`{"status":"ok"}`))
-	job := &models.Job{Queue: "bench_json", Type: "test_json", Payload: payload, Result: result}
+	job := &models.Job{Queue: "bench_json", Payload: payload, Result: result}
 	_ = repo.Create(ctx, job)
 
 	for b.Loop() {

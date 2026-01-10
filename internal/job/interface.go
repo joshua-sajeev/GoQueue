@@ -20,7 +20,7 @@ type JobRepoInterface interface {
 	SaveResult(ctx context.Context, id uint, result datatypes.JSON, err string) error
 	List(ctx context.Context, queue string) ([]models.Job, error)
 
-	AcquireNext(ctx context.Context, queue string, workerID uint, lockDuration time.Duration) (*models.Job, error)
+	AcquireNext(ctx context.Context, queue string, workerID uint, lockDuration time.Duration) (*dto.JobDTO, error)
 	Release(ctx context.Context, id uint) error
 	RetryLater(ctx context.Context, id uint, availableAt time.Time) error
 	ListStuckJobs(ctx context.Context, staleDuration time.Duration) ([]models.Job, error)

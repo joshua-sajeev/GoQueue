@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/joshu-sajeev/goqueue/internal/config"
+	"github.com/joshu-sajeev/goqueue/internal/dto"
 	"github.com/joshu-sajeev/goqueue/internal/job"
 	"github.com/joshu-sajeev/goqueue/internal/models"
 	"gorm.io/datatypes"
@@ -110,7 +111,7 @@ func (r *JobRepository) List(ctx context.Context, queue string) ([]models.Job, e
 
 // AcquireNext atomically claims the next available job for a worker
 // This is THE CRITICAL METHOD for queue operation
-func (r *JobRepository) AcquireNext(ctx context.Context, queue string, workerID uint, lockDuration time.Duration) (*models.Job, error) {
+func (r *JobRepository) AcquireNext(ctx context.Context, queue string, workerID uint, lockDuration time.Duration) (*dto.JobDTO, error) {
 	var job models.Job
 	now := time.Now()
 	lockExpiry := now.Add(lockDuration)
@@ -148,7 +149,12 @@ func (r *JobRepository) AcquireNext(ctx context.Context, queue string, workerID 
 		return nil, fmt.Errorf("acquire next: %w", err)
 	}
 
-	return &job, nil
+	return &dto.JobDTO{
+		ID:      job.ID,
+		Queue:   job.Queue,
+		Type:    job.Type,
+		Payload: job.Payload,
+	}, nil
 }
 
 // Release unlocks a job (used when worker fails without updating)

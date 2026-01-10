@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/joshu-sajeev/goqueue/internal/config"
+	"github.com/joshu-sajeev/goqueue/internal/dto"
 	"github.com/joshu-sajeev/goqueue/internal/models"
 	"github.com/stretchr/testify/mock"
 	"gorm.io/datatypes"
@@ -53,10 +54,10 @@ func (m *JobRepoMock) List(ctx context.Context, queue string) ([]models.Job, err
 	return jobs, args.Error(1)
 }
 
-func (m *JobRepoMock) AcquireNext(ctx context.Context, queue string, workerID uint, lockDuration time.Duration) (*models.Job, error) {
+func (m *JobRepoMock) AcquireNext(ctx context.Context, queue string, workerID uint, lockDuration time.Duration) (*dto.JobDTO, error) {
 	args := m.Called(ctx, queue, workerID, lockDuration)
 
-	job, _ := args.Get(0).(*models.Job)
+	job, _ := args.Get(0).(*dto.JobDTO)
 	return job, args.Error(1)
 }
 

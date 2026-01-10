@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/joshu-sajeev/goqueue/internal/config"
+	"gorm.io/datatypes"
 )
 
 type JobCreateDTO struct {
@@ -27,4 +28,17 @@ type JobResponseDTO struct {
 	Error      string           `json:"error,omitempty"`
 	CreatedAt  time.Time        `json:"created_at"`
 	UpdatedAt  time.Time        `json:"updated_at"`
+}
+
+type JobDTO struct {
+	ID      uint           `json:"id"`
+	Queue   string         `json:"queue"`
+	Type    string         `json:"type"`
+	Payload datatypes.JSON `json:"payload"`
+	// Attempts   int            `json:"attempts"`
+	// MaxRetries int            `json:"max_retries"`
+	// Result     datatypes.JSON `json:"result,omitempty"`
+	// Error      string         `json:"error,omitempty"`
+	// CreatedAt  time.Time      `json:"created_at"`
+	// UpdatedAt  time.Time      `json:"updated_at"`
 }

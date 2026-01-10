@@ -115,7 +115,7 @@ func (r *JobRepository) AcquireNext(ctx context.Context, queue string, workerID 
 	var job models.Job
 	now := time.Now()
 	lockExpiry := now.Add(lockDuration)
-
+	var found bool
 	// Transaction to prevent race conditions
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Find first available job:
@@ -132,11 +132,16 @@ func (r *JobRepository) AcquireNext(ctx context.Context, queue string, workerID 
 
 		if err := query.First(&job).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return fmt.Errorf("no jobs available")
+				return nil
 			}
 			return err
 		}
 
+		if job.ID == 0 {
+			return nil
+		}
+
+		found = true
 		// Lock the job
 		return tx.Model(&job).Updates(map[string]any{
 			"locked_at": lockExpiry,
@@ -147,6 +152,10 @@ func (r *JobRepository) AcquireNext(ctx context.Context, queue string, workerID 
 
 	if err != nil {
 		return nil, fmt.Errorf("acquire next: %w", err)
+	}
+
+	if !found {
+		return nil, nil
 	}
 
 	return &dto.JobDTO{

@@ -597,6 +597,7 @@ func TestJobRepository_AcquireNext(t *testing.T) {
 		setup        func(db *gorm.DB)
 		wantErr      bool
 		errContains  string
+		wantJob      bool
 	}{
 		{
 			name:         "no jobs available",
@@ -604,8 +605,8 @@ func TestJobRepository_AcquireNext(t *testing.T) {
 			workerID:     1,
 			lockDuration: time.Minute,
 			setup:        func(db *gorm.DB) {},
-			wantErr:      true,
-			errContains:  "no jobs available",
+			wantErr:      false,
+			wantJob:      false,
 		},
 		{
 			name:         "successfully acquires queued job",
@@ -622,6 +623,7 @@ func TestJobRepository_AcquireNext(t *testing.T) {
 				require.NoError(t, db.Create(&job).Error)
 			},
 			wantErr: false,
+			wantJob: true,
 		},
 		{
 			name:         "job not yet available",
@@ -636,8 +638,7 @@ func TestJobRepository_AcquireNext(t *testing.T) {
 				}
 				require.NoError(t, db.Create(&job).Error)
 			},
-			wantErr:     true,
-			errContains: "no jobs available",
+			wantErr: false,
 		},
 		{
 			name:         "locked job is skipped",
@@ -655,8 +656,8 @@ func TestJobRepository_AcquireNext(t *testing.T) {
 				}
 				require.NoError(t, db.Create(&job).Error)
 			},
-			wantErr:     true,
-			errContains: "no jobs available",
+			wantErr: false,
+			wantJob: false,
 		},
 	}
 
@@ -680,17 +681,20 @@ func TestJobRepository_AcquireNext(t *testing.T) {
 			}
 
 			require.NoError(t, err)
-			require.NotNil(t, job)
+			if tt.wantJob {
+				assert.Equal(t, tt.queue, job.Queue)
+				assert.NotZero(t, job.ID)
+				assert.NotNil(t, job.Payload)
 
-			assert.Equal(t, tt.queue, job.Queue)
-			assert.NotZero(t, job.ID)
-			assert.NotNil(t, job.Payload)
+				var lockedJob models.Job
+				require.NoError(t, db.First(&lockedJob, job.ID).Error)
+				assert.Equal(t, config.JobStatusRunning, lockedJob.Status)
+				assert.NotNil(t, lockedJob.LockedAt)
+				assert.Equal(t, tt.workerID, *lockedJob.LockedBy)
+			} else {
+				require.Nil(t, job)
+			}
 
-			var lockedJob models.Job
-			require.NoError(t, db.First(&lockedJob, job.ID).Error)
-			assert.Equal(t, config.JobStatusRunning, lockedJob.Status)
-			assert.NotNil(t, lockedJob.LockedAt)
-			assert.Equal(t, tt.workerID, *lockedJob.LockedBy)
 		})
 	}
 }

@@ -26,7 +26,6 @@ func TestJobRepository_Create(t *testing.T) {
 			job: &models.Job{
 				ID:         1,
 				Queue:      "email",
-				Type:       "send_email",
 				Payload:    datatypes.JSON([]byte(`{"email":"test@example.com","foo":"bar"}`)),
 				Status:     config.JobStatusQueued,
 				Attempts:   0,
@@ -41,13 +40,11 @@ func TestJobRepository_Create(t *testing.T) {
 			job: &models.Job{
 				ID:    2,
 				Queue: "email",
-				Type:  "send_email",
 			},
 			setup: func(db *gorm.DB) {
 				_ = db.Create(&models.Job{
 					ID:    2,
 					Queue: "reports",
-					Type:  "generate_report",
 				}).Error
 			},
 			wantErr: true,
@@ -57,7 +54,6 @@ func TestJobRepository_Create(t *testing.T) {
 			job: &models.Job{
 				ID:    3,
 				Queue: "email",
-				Type:  "send_email",
 			},
 			setup: func(db *gorm.DB) {
 				sqlDB, _ := db.DB()
@@ -99,7 +95,6 @@ func TestJobRepository_Create(t *testing.T) {
 
 			// Basic field checks
 			assert.Equal(t, tt.job.Queue, saved.Queue)
-			assert.Equal(t, tt.job.Type, saved.Type)
 			assert.Equal(t, tt.job.Status, saved.Status)
 			assert.Equal(t, tt.job.Attempts, saved.Attempts)
 			assert.Equal(t, tt.job.MaxRetries, saved.MaxRetries)
@@ -139,7 +134,6 @@ func TestJobRepository_Get(t *testing.T) {
 				db.Create(&models.Job{
 					ID:         1,
 					Queue:      "email",
-					Type:       "send_email",
 					Payload:    datatypes.JSON([]byte(`{"email":"test@example.com","foo":"bar"}`)),
 					Status:     config.JobStatusCompleted,
 					Attempts:   0,
@@ -196,7 +190,6 @@ func TestJobRepository_Get(t *testing.T) {
 
 			assert.Equal(t, uint(1), got.ID)
 			assert.Equal(t, "email", got.Queue)
-			assert.Equal(t, "send_email", got.Type)
 			assert.Equal(t, config.JobStatusCompleted, got.Status)
 			assert.Equal(t, 0, got.Attempts)
 			assert.Equal(t, 10, got.MaxRetries)
@@ -233,7 +226,6 @@ func TestJobRepository_UpdateStatus(t *testing.T) {
 				db.Create(&models.Job{
 					ID:     1,
 					Queue:  "email",
-					Type:   "send_email",
 					Status: config.JobStatusQueued,
 				})
 			},
@@ -623,6 +615,7 @@ func TestJobRepository_AcquireNext(t *testing.T) {
 			setup: func(db *gorm.DB) {
 				job := models.Job{
 					Queue:       "default",
+					Payload:     datatypes.JSON([]byte(`{"to":"test@example.com"}`)),
 					Status:      config.JobStatusQueued,
 					AvailableAt: now.Add(-time.Minute),
 				}
@@ -689,13 +682,15 @@ func TestJobRepository_AcquireNext(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, job)
 
-			var dbJob models.Job
-			require.NoError(t, db.First(&dbJob, job.ID).Error)
+			assert.Equal(t, tt.queue, job.Queue)
+			assert.NotZero(t, job.ID)
+			assert.NotNil(t, job.Payload)
 
-			assert.Equal(t, config.JobStatusRunning, dbJob.Status)
-			assert.Equal(t, tt.workerID, *dbJob.LockedBy)
-			assert.NotNil(t, dbJob.LockedAt)
-			assert.True(t, dbJob.LockedAt.After(now))
+			var lockedJob models.Job
+			require.NoError(t, db.First(&lockedJob, job.ID).Error)
+			assert.Equal(t, config.JobStatusRunning, lockedJob.Status)
+			assert.NotNil(t, lockedJob.LockedAt)
+			assert.Equal(t, tt.workerID, *lockedJob.LockedBy)
 		})
 	}
 }

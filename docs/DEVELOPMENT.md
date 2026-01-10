@@ -203,7 +203,6 @@ func TestJobService_CreateJob(t *testing.T) {
     
     err := service.CreateJob(context.Background(), &dto.JobCreateDTO{
         Queue: "email",
-        Type: "send_email",
         Payload: json.RawMessage(`{"to":"test@example.com"}`),
     })
     
@@ -221,7 +220,6 @@ func TestJobRepository_Create(t *testing.T) {
     repo := postgres.NewJobRepository(db)
     job := &models.Job{
         Queue: "email",
-        Type: "send_email",
     }
     
     err := repo.Create(ctx, job)
@@ -291,7 +289,7 @@ docker exec -it postgres_container psql -U goqueue_user -d goqueue
 Common queries:
 ```sql
 -- List all jobs
-SELECT id, queue, type, status, attempts FROM jobs;
+SELECT id, queue, status, attempts FROM jobs;
 
 -- Count jobs by status
 SELECT status, COUNT(*) FROM jobs GROUP BY status;
@@ -329,53 +327,6 @@ internal/
 ├── storage/         # Data access layer
 │   └── postgres/
 └── mocks/           # Test mocks
-```
-
-### Adding a New Job Type
-
-1. **Define payload DTO** (`internal/dto/`):
-```go
-// internal/dto/sms.go
-package dto
-
-type SendSMSPayload struct {
-    Phone   string `json:"phone" validate:"required,e164"`
-    Message string `json:"message" validate:"required"`
-}
-```
-
-2. **Update constants** (`internal/config/constants.go`):
-```go
-var AllowedJobTypes = []string{
-    "send_email",
-    "process_payment",
-    "send_webhook",
-    "send_sms", // New
-}
-```
-
-3. **Add validation** (`internal/job/job_service.go`):
-```go
-case "send_sms":
-    if err := s.validateSendSMSPayload(dto.Payload); err != nil {
-        return err
-    }
-```
-
-4. **Implement validator** (`internal/job/job_service.go`):
-```go
-func (s *JobService) validateSendSMSPayload(raw json.RawMessage) error {
-    return validatePayload[dto.SendSMSPayload](raw)
-}
-```
-
-5. **Write tests**:
-```go
-func TestJobService_CreateJob_SendSMS(t *testing.T) {
-    // Test valid SMS payload
-    // Test invalid phone numbers
-    // Test missing fields
-}
 ```
 
 ### Adding a New Queue
@@ -479,15 +430,6 @@ Types:
 - `refactor`: Code refactoring
 - `chore`: Maintenance
 
-Example:
-```
-feat: add SMS job type
-
-- Add SendSMSPayload DTO
-- Implement SMS validation
-- Update allowed job types
-- Add tests for SMS jobs
-```
 
 ### Pull Request Guidelines
 

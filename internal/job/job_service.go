@@ -50,27 +50,20 @@ func (s *JobService) CreateJob(ctx context.Context, dto *dto.JobCreateDTO) error
 		)
 	}
 
-	if !slices.Contains(config.AllowedJobTypes, dto.Type) {
-		return common.NewAPIError(
-			http.StatusBadRequest,
-			"invalid job type",
-			map[string]any{
-				"provided": dto.Type,
-				"allowed":  config.AllowedJobTypes,
-			},
-		)
-	}
-
-	switch dto.Type {
-	case "send_email":
+	switch dto.Queue {
+	case "default":
 		if err := s.validateSendEmailPayload(dto.Payload); err != nil {
 			return err
 		}
-	case "process_payment":
+	case "email":
+		if err := s.validateSendEmailPayload(dto.Payload); err != nil {
+			return err
+		}
+	case "payment":
 		if err := s.validateProcessPaymentPayload(dto.Payload); err != nil {
 			return err
 		}
-	case "send_webhook":
+	case "webhook":
 		if err := s.validateSendWebhookPayload(dto.Payload); err != nil {
 			return err
 		}
@@ -83,7 +76,6 @@ func (s *JobService) CreateJob(ctx context.Context, dto *dto.JobCreateDTO) error
 
 	job := models.Job{
 		Queue:      dto.Queue,
-		Type:       dto.Type,
 		Payload:    datatypes.JSON(dto.Payload),
 		MaxRetries: maxRetries,
 	}
@@ -146,7 +138,6 @@ func (s *JobService) GetJobByID(ctx context.Context, id uint) (*dto.JobResponseD
 	return &dto.JobResponseDTO{
 		ID:         job.ID,
 		Queue:      job.Queue,
-		Type:       job.Type,
 		Payload:    json.RawMessage(job.Payload),
 		Status:     job.Status,
 		Attempts:   job.Attempts,
@@ -283,7 +274,6 @@ func (s *JobService) ListJobs(ctx context.Context, queue string) ([]dto.JobRespo
 		dtos[i] = dto.JobResponseDTO{
 			ID:         job.ID,
 			Queue:      job.Queue,
-			Type:       job.Type,
 			Payload:    json.RawMessage(job.Payload),
 			Status:     job.Status,
 			Attempts:   job.Attempts,

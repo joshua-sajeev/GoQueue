@@ -35,7 +35,6 @@ curl -X POST http://localhost:8080/jobs/create \
   -H "Content-Type: application/json" \
   -d '{
     "queue": "email",
-    "type": "send_email",
     "payload": {
       "to": "user@example.com",
       "subject": "Hello",
@@ -63,7 +62,6 @@ curl http://localhost:8080/jobs?queue=email
 - REST API with Gin framework
 - PostgreSQL storage with GORM
 - Multiple queues (default, email, webhooks)
-- Three job types (send_email, process_payment, send_webhook)
 - Request validation and timeout handling
 - Database migrations with Goose
 - Hot reload development environment

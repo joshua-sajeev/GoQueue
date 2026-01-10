@@ -132,7 +132,8 @@ job, _ := AcquireNext(ctx, "email", 1, 30*time.Second)
 ###### Return value
 
 ```go
-Job{ID: 1, Type: "send_email"}
+//TODO:
+Job{ID: 1, Queue: "email"}
 ```
 
 Worker `1` now owns job 1.

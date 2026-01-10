@@ -11,7 +11,6 @@ import (
 type Job struct {
 	ID      uint `gorm:"primaryKey"`
 	Queue   string
-	Type    string
 	Payload datatypes.JSON
 
 	Status     config.JobStatus

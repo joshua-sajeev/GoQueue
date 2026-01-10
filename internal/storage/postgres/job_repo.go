@@ -30,7 +30,6 @@ var _ job.JobRepoInterface = (*JobRepository)(nil)
 // context for cancellation and timeout propagation. Returns an error if the
 // database operation fails.
 func (r *JobRepository) Create(ctx context.Context, job *models.Job) error {
-	//TODO:Use constants
 	job.Status = config.JobStatusQueued
 	if job.AvailableAt.IsZero() {
 		job.AvailableAt = time.Now()
@@ -163,6 +162,25 @@ func (r *JobRepository) AcquireNext(ctx context.Context, queue string, workerID 
 		Queue:   job.Queue,
 		Payload: job.Payload,
 	}, nil
+}
+
+// MarkCompleted finalizes the job after successful execution.
+// It sets the status to 'completed', clears locks, and saves the final result.
+func (r *JobRepository) MarkCompleted(ctx context.Context, id uint, result datatypes.JSON) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.Job{}).
+			Where("id = ?", id).
+			Updates(map[string]any{
+				"status":    config.JobStatusCompleted,
+				"result":    result,
+				"locked_at": nil,
+				"locked_by": nil,
+				"error":     nil,
+			}).Error; err != nil {
+			return fmt.Errorf("mark completed: %w", err)
+		}
+		return nil
+	})
 }
 
 // Release unlocks a job (used when worker fails without updating)

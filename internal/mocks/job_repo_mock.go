@@ -77,3 +77,8 @@ func (m *JobRepoMock) ListStuckJobs(ctx context.Context, staleDuration time.Dura
 	jobs, _ := args.Get(0).([]models.Job)
 	return jobs, args.Error(1)
 }
+
+func (m *JobRepoMock) MarkCompleted(ctx context.Context, id uint, result datatypes.JSON) error {
+	args := m.Called(ctx, id, result)
+	return args.Error(0)
+}

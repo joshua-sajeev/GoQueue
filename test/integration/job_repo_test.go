@@ -2,6 +2,7 @@ package integration
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -869,6 +870,84 @@ func TestJobRepository_ListStuckJobs(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.Len(t, jobs, tt.wantCount)
+		})
+	}
+}
+
+func TestJobRepository_MarkCompleted(t *testing.T) {
+	now := time.Now()
+
+	tests := []struct {
+		name        string
+		jobID       uint
+		result      datatypes.JSON
+		setup       func(db *gorm.DB) uint
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:   "successfully marks job as completed",
+			result: datatypes.JSON([]byte(`{"status":"ok"}`)),
+			setup: func(db *gorm.DB) uint {
+				lockedAt := now
+				job := models.Job{
+					Queue:       "default",
+					Status:      config.JobStatusRunning,
+					AvailableAt: now.Add(-time.Minute),
+					LockedAt:    &lockedAt,
+					LockedBy:    ptrUint(42),
+				}
+				require.NoError(t, db.Create(&job).Error)
+				return job.ID
+			},
+			wantErr: false,
+		},
+		{
+			name:    "job does not exist",
+			jobID:   99999,
+			result:  datatypes.JSON([]byte(`{"status":"ok"}`)),
+			setup:   func(db *gorm.DB) uint { return 99999 },
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db, ctx := setupTestDB(t)
+			defer closeTestDB(db)
+
+			repo := postgres.NewJobRepository(db)
+
+			var jobID uint
+			if tt.setup != nil {
+				jobID = tt.setup(db)
+			} else {
+				jobID = tt.jobID
+			}
+
+			err := repo.MarkCompleted(ctx, jobID, tt.result)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errContains)
+				return
+			}
+
+			require.NoError(t, err)
+
+			// If job exists, verify state
+			var job models.Job
+			err = db.First(&job, jobID).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return
+			}
+			require.NoError(t, err)
+
+			assert.Equal(t, config.JobStatusCompleted, job.Status)
+			assert.JSONEq(t, string(tt.result), string(job.Result))
+			assert.Nil(t, job.LockedAt)
+			assert.Nil(t, job.LockedBy)
+			assert.Empty(t, job.Error)
 		})
 	}
 }

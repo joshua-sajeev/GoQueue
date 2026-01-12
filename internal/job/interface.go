@@ -11,6 +11,11 @@ import (
 	"gorm.io/datatypes"
 )
 
+type Server interface {
+	ListenAndServe() error
+	Shutdown(ctx context.Context) error
+}
+
 // JobRepoInterface defines the contract for job repository operations.
 type JobRepoInterface interface {
 	Create(ctx context.Context, job *models.Job) error

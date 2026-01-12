@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/joshu-sajeev/goqueue/internal/config"
 	"github.com/joshu-sajeev/goqueue/internal/storage/postgres"
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
@@ -157,7 +158,7 @@ func runMigrations(db *sql.DB) error {
 func TestConnectDB(t *testing.T) {
 	tests := []struct {
 		name        string
-		config      *postgres.Config
+		config      *config.Config
 		setupEnv    func()
 		cleanupEnv  func()
 		wantErr     bool
@@ -246,7 +247,7 @@ func TestConnectDB(t *testing.T) {
 		},
 		{
 			name: "Test 3: Successful connection with explicit config",
-			config: &postgres.Config{
+			config: &config.Config{
 				User:       "testuser",
 				Password:   "testpass",
 				Host:       "localhost",
@@ -303,7 +304,7 @@ func TestConnectDB(t *testing.T) {
 		},
 		{
 			name: "Test 5a: Connection refused (wrong port)",
-			config: &postgres.Config{
+			config: &config.Config{
 				User:           "testuser",
 				Password:       "testpass",
 				Host:           "localhost",
@@ -322,7 +323,7 @@ func TestConnectDB(t *testing.T) {
 		},
 		{
 			name: "Test 5b: Invalid credentials",
-			config: &postgres.Config{
+			config: &config.Config{
 				User:           "testuser",
 				Password:       "wrongpass",
 				Host:           "localhost",
@@ -341,7 +342,7 @@ func TestConnectDB(t *testing.T) {
 		},
 		{
 			name: "Test 5c: Non-existent database",
-			config: &postgres.Config{
+			config: &config.Config{
 				User:           "testuser",
 				Password:       "testpass",
 				Host:           "localhost",
@@ -360,7 +361,7 @@ func TestConnectDB(t *testing.T) {
 		},
 		{
 			name: "Test 5d: Network timeout (non-routable IP)",
-			config: &postgres.Config{
+			config: &config.Config{
 				User:           "testuser",
 				Password:       "testpass",
 				Host:           "192.0.2.1",
@@ -379,7 +380,7 @@ func TestConnectDB(t *testing.T) {
 		},
 		{
 			name: "Test 6: MaxRetries = 0 should fail immediately",
-			config: &postgres.Config{
+			config: &config.Config{
 				User:       "testuser",
 				Password:   "testpass",
 				Host:       "invalid-host",
@@ -398,7 +399,7 @@ func TestConnectDB(t *testing.T) {
 
 		{
 			name: "Test 7: Missing fields in explicit config",
-			config: &postgres.Config{
+			config: &config.Config{
 				User:       "testuser",
 				Host:       "localhost",
 				Port:       testPort,
@@ -459,7 +460,7 @@ func setupTestDB(tb testing.TB) (*gorm.DB, context.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	tb.Cleanup(cancel)
 
-	testConfig := &postgres.Config{
+	testConfig := &config.Config{
 		User:       "testuser",
 		Password:   "testpass",
 		Host:       "localhost",

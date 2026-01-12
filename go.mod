@@ -3,6 +3,7 @@ module github.com/joshu-sajeev/goqueue
 go 1.25
 
 require (
+	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/gin-gonic/gin v1.11.0
 	github.com/go-playground/validator/v10 v10.27.0
 	github.com/lib/pq v1.10.9
@@ -12,6 +13,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	gorm.io/datatypes v1.2.7
 	gorm.io/driver/postgres v1.6.0
+	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.1
 )
 

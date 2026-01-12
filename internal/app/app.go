@@ -1,0 +1,105 @@
+package app
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"net/http"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/joshu-sajeev/goqueue/internal/config"
+	"github.com/joshu-sajeev/goqueue/internal/job"
+	"github.com/joshu-sajeev/goqueue/internal/router"
+	"github.com/joshu-sajeev/goqueue/internal/storage/postgres"
+	"gorm.io/gorm"
+)
+
+type App struct {
+	Config     *config.Config
+	DB         *gorm.DB
+	Router     *gin.Engine
+	Server     Server
+	JobHandler *job.JobHandler
+}
+
+func NewApp(ctx context.Context) (*App, error) {
+	app := &App{}
+	var err error
+
+	app.Config, err = config.LoadConfigFromEnv(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	app.DB, err = postgres.ConnectDB(ctx, app.Config)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Println("SUCCESS! Database connected")
+
+	jobRepo := postgres.NewJobRepository(app.DB)
+	jobService := job.NewJobService(jobRepo)
+	app.JobHandler = job.NewJobHandler(jobService)
+
+	// internal/app/app.go
+	app.Router = router.NewRouter(app.JobHandler, app.DB, app.Ready)
+
+	addr := fmt.Sprintf(":%s", app.Config.ServerPort)
+	app.Server = &HTTPServer{
+		srv: &http.Server{
+			Addr:    addr,
+			Handler: app.Router.Handler(),
+		},
+	}
+
+	return app, nil
+}
+
+// Ready performs a deep health check of the app dependencies
+func (app *App) Ready() error {
+	if app.DB == nil {
+		return fmt.Errorf("DB is not present")
+	}
+	sqlDB, err := app.DB.DB()
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	return sqlDB.PingContext(ctx)
+}
+
+func (app *App) Run(ctx context.Context) {
+	go func() {
+		log.Printf("Starting server on %s...", app.Config.ServerPort)
+		if err := app.Server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server failed: %v", err)
+		}
+	}()
+
+	<-ctx.Done()
+	log.Println("Shutdown signal received. Cleaning up...")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := app.Server.Shutdown(shutdownCtx); err != nil {
+		log.Printf("Server forced to shutdown: %v", err)
+	}
+
+	if app.DB != nil {
+		if sqlDB, err := app.DB.DB(); err == nil {
+			if err := sqlDB.Close(); err != nil {
+				log.Printf("Error closing database: %v", err)
+			} else {
+				log.Println("Database connection closed cleanly")
+			}
+		}
+	}
+
+	log.Println("Server exiting")
+}

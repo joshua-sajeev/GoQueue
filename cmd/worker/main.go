@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/joshu-sajeev/goqueue/internal/config"
 	"github.com/joshu-sajeev/goqueue/internal/pool"
 	"github.com/joshu-sajeev/goqueue/internal/storage/postgres"
 )
@@ -17,7 +18,7 @@ func main() {
 	log.Println("Starting Worker...")
 
 	ctx := context.Background()
-	cfg, err := postgres.LoadConfigFromEnv(ctx)
+	cfg, err := config.LoadConfigFromEnv(ctx)
 	if err != nil {
 		log.Fatal("Failed to load config:", err)
 	}

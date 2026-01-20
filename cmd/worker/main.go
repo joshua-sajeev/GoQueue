@@ -5,19 +5,20 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
-	"time"
 
+	"github.com/joshu-sajeev/goqueue/internal/app"
 	"github.com/joshu-sajeev/goqueue/internal/config"
-	"github.com/joshu-sajeev/goqueue/internal/pool"
 	"github.com/joshu-sajeev/goqueue/internal/storage/postgres"
 )
 
 func main() {
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	log.Println("Starting Worker...")
 
-	ctx := context.Background()
 	cfg, err := config.LoadConfigFromEnv(ctx)
 	if err != nil {
 		log.Fatal("Failed to load config:", err)
@@ -30,24 +31,6 @@ func main() {
 
 	log.Println("SUCCESS! Database connected")
 
-	repo := postgres.NewJobRepository(db)
-	queues := []string{"email", "payment", "default", "webhooks"}
-	temp := os.Getenv("MAX_WORKERS")
-	maxWorkers := 10
-
-	if v, err := strconv.Atoi(temp); err == nil && v > 0 {
-		maxWorkers = v
-	}
-
-	workerPool := pool.NewWorkerPool(maxWorkers, repo, queues, 1*time.Minute)
-
-	workerPool.Start()
-	log.Println("Worker pool active. Press Ctrl+C to stop.")
-
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
-	<-stop
-
-	workerPool.Stop()
-	log.Println("Shutdown complete.")
+	worker := app.NewWorkerApp(db, cfg)
+	worker.Run(ctx)
 }

@@ -22,6 +22,7 @@ type Config struct {
 	ConnectTimeout int           `env:"DB_CONNECT_TIMEOUT,default=5"`
 	LogLevelString string        `env:"DB_LOG_LEVEL,default=warn"`
 	ServerPort     string        `env:"SERVER_PORT,default=8080"`
+	MaxWorkers     int           `env:"MAX_WORKERS,default=10"`
 	LogLevel       logger.LogLevel
 }
 

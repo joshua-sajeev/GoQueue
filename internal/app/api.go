@@ -23,27 +23,16 @@ type ApiApp struct {
 	JobHandler *job.JobHandler
 }
 
-func NewApiApp(ctx context.Context) (*ApiApp, error) {
+func NewApiApp(db *gorm.DB, cfg *config.Config) *ApiApp {
 	app := &ApiApp{}
-	var err error
 
-	app.Config, err = config.LoadConfigFromEnv(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	app.DB, err = postgres.ConnectDB(ctx, app.Config)
-	if err != nil {
-		return nil, err
-	}
-
-	log.Println("SUCCESS! Database connected")
+	app.Config = cfg
+	app.DB = db
 
 	jobRepo := postgres.NewJobRepository(app.DB)
 	jobService := job.NewJobService(jobRepo)
 	app.JobHandler = job.NewJobHandler(jobService)
 
-	// internal/app/app.go
 	app.Router = router.NewRouter(app.JobHandler, app.DB, app.Ready)
 
 	addr := fmt.Sprintf(":%s", app.Config.ServerPort)
@@ -54,7 +43,7 @@ func NewApiApp(ctx context.Context) (*ApiApp, error) {
 		},
 	}
 
-	return app, nil
+	return app
 }
 
 // Ready performs a deep health check of the app dependencies

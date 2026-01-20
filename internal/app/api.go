@@ -15,7 +15,7 @@ import (
 	"gorm.io/gorm"
 )
 
-type App struct {
+type ApiApp struct {
 	Config     *config.Config
 	DB         *gorm.DB
 	Router     *gin.Engine
@@ -23,8 +23,8 @@ type App struct {
 	JobHandler *job.JobHandler
 }
 
-func NewApp(ctx context.Context) (*App, error) {
-	app := &App{}
+func NewApiApp(ctx context.Context) (*ApiApp, error) {
+	app := &ApiApp{}
 	var err error
 
 	app.Config, err = config.LoadConfigFromEnv(ctx)
@@ -48,7 +48,7 @@ func NewApp(ctx context.Context) (*App, error) {
 
 	addr := fmt.Sprintf(":%s", app.Config.ServerPort)
 	app.Server = &HTTPServer{
-		srv: &http.Server{
+		Srv: &http.Server{
 			Addr:    addr,
 			Handler: app.Router.Handler(),
 		},
@@ -58,11 +58,11 @@ func NewApp(ctx context.Context) (*App, error) {
 }
 
 // Ready performs a deep health check of the app dependencies
-func (app *App) Ready() error {
-	if app.DB == nil {
+func (a *ApiApp) Ready() error {
+	if a.DB == nil {
 		return fmt.Errorf("DB is not present")
 	}
-	sqlDB, err := app.DB.DB()
+	sqlDB, err := a.DB.DB()
 	if err != nil {
 		return err
 	}
@@ -73,10 +73,10 @@ func (app *App) Ready() error {
 	return sqlDB.PingContext(ctx)
 }
 
-func (app *App) Run(ctx context.Context) {
+func (a *ApiApp) Run(ctx context.Context) {
 	go func() {
-		log.Printf("Starting server on %s...", app.Config.ServerPort)
-		if err := app.Server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Printf("Starting server on %s...", a.Config.ServerPort)
+		if err := a.Server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server failed: %v", err)
 		}
 	}()
@@ -87,12 +87,12 @@ func (app *App) Run(ctx context.Context) {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := app.Server.Shutdown(shutdownCtx); err != nil {
+	if err := a.Server.Shutdown(shutdownCtx); err != nil {
 		log.Printf("Server forced to shutdown: %v", err)
 	}
 
-	if app.DB != nil {
-		if sqlDB, err := app.DB.DB(); err == nil {
+	if a.DB != nil {
+		if sqlDB, err := a.DB.DB(); err == nil {
 			if err := sqlDB.Close(); err != nil {
 				log.Printf("Error closing database: %v", err)
 			} else {

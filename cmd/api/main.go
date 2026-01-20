@@ -14,7 +14,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	application, err := app.NewApp(ctx)
+	application, err := app.NewApiApp(ctx)
 	if err != nil {
 		log.Fatal("Couldn't start application:", err)
 	}

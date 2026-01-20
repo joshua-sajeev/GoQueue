@@ -15,14 +15,14 @@ func TestApp_Ready_Success(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	assert.NoError(t, err)
 
-	app := &App{DB: db}
+	app := &ApiApp{DB: db}
 
 	err = app.Ready()
 	assert.NoError(t, err)
 }
 
 func TestApp_Ready_DBNil(t *testing.T) {
-	app := &App{DB: nil}
+	app := &ApiApp{DB: nil}
 
 	err := app.Ready()
 	assert.Error(t, err)
@@ -47,7 +47,7 @@ func TestApp_Run_ShutdownFlow(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	mockSrv := &mockServer{}
-	app := &App{
+	app := &ApiApp{
 		Server: mockSrv,
 		DB:     nil, // DB close is guarded
 		Config: &config.Config{

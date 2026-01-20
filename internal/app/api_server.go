@@ -11,13 +11,13 @@ type Server interface {
 }
 
 type HTTPServer struct {
-	srv *http.Server
+	Srv *http.Server
 }
 
 func (h *HTTPServer) ListenAndServe() error {
-	return h.srv.ListenAndServe()
+	return h.Srv.ListenAndServe()
 }
 
 func (h *HTTPServer) Shutdown(ctx context.Context) error {
-	return h.srv.Shutdown(ctx)
+	return h.Srv.Shutdown(ctx)
 }

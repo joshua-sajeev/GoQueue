@@ -24,7 +24,7 @@ func NewWorkerPool(count int, repo *postgres.JobRepository, queues []string, dur
 	p := &WorkerPool{jobRepo: repo, lockDuration: dur, ctx: ctx, cancel: cancel}
 
 	for i := 1; i <= count; i++ {
-		p.workers = append(p.workers, worker.NewWorker(i, repo, queues, dur))
+		p.workers = append(p.workers, worker.NewWorker(i, repo, queues, dur, time.Second, 60*time.Second))
 	}
 	return p
 }

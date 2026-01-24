@@ -4,36 +4,55 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/joshu-sajeev/goqueue/internal/dto"
-	"github.com/joshu-sajeev/goqueue/internal/storage/postgres"
 	"gorm.io/datatypes"
 )
 
-type Worker struct {
-	ID           int
-	jobRepo      *postgres.JobRepository
-	queues       []string
-	lockDuration time.Duration
-	quit         chan struct{}
+type JobRepository interface {
+	AcquireNext(ctx context.Context, queue string, workerID uint, lockDuration time.Duration) (*dto.JobDTO, error)
+	RetryLater(ctx context.Context, id uint, availableAt time.Time) error
+	MarkCompleted(ctx context.Context, id uint, result datatypes.JSON) error
 }
 
-func NewWorker(id int, repo *postgres.JobRepository, queues []string, dur time.Duration) *Worker {
-	return &Worker{ID: id, jobRepo: repo, queues: queues, lockDuration: dur, quit: make(chan struct{})}
+type Worker struct {
+	ID              int
+	jobRepo         JobRepository
+	queues          []string
+	lockDuration    time.Duration
+	quit            chan struct{}
+	PollInterval    time.Duration
+	MaxPollInterval time.Duration
+	wg              sync.WaitGroup
+}
+
+func NewWorker(id int, repo JobRepository, queues []string, dur time.Duration, pi time.Duration, mi time.Duration) *Worker {
+	return &Worker{ID: id, jobRepo: repo, queues: queues, lockDuration: dur, quit: make(chan struct{}), PollInterval: pi, MaxPollInterval: mi}
 }
 
 func (w *Worker) Start(ctx context.Context) {
-	go func() {
-		currentDelay := 1 * time.Second
-		maxDelay := 60 * time.Second
+	w.wg.Go(func() {
+
+		delay := w.PollInterval
+		if delay == 0 {
+			delay = 1 * time.Second
+		}
+
+		maxDelay := w.MaxPollInterval
+		if maxDelay == 0 {
+			maxDelay = 60 * time.Second
+		}
+
+		currentDelay := delay
 
 		for {
 			job := w.pullJob(ctx)
 
 			if job != nil {
 				w.process(ctx, job)
-				currentDelay = 1 * time.Second
+				currentDelay = delay
 			} else {
 				currentDelay = min(currentDelay*2, maxDelay)
 			}
@@ -46,7 +65,12 @@ func (w *Worker) Start(ctx context.Context) {
 				return
 			}
 		}
-	}()
+	})
+}
+
+func (w *Worker) Stop() {
+	close(w.quit)
+	w.wg.Wait() // This ensures the goroutine is DEAD before we continue
 }
 
 func (w *Worker) pullJob(ctx context.Context) *dto.JobDTO {
@@ -89,5 +113,3 @@ func (w *Worker) execute(ctx context.Context, job *dto.JobDTO) (any, error) {
 		return nil, fmt.Errorf("unknown queue: %s", job.Queue)
 	}
 }
-
-func (w *Worker) Stop() { close(w.quit) }

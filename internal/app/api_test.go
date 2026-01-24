@@ -5,11 +5,37 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/joshu-sajeev/goqueue/internal/config"
 	"github.com/stretchr/testify/assert"
+	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+func TestNewApiApp(t *testing.T) {
+	mockDb, _, err := sqlmock.New()
+	assert.NoError(t, err)
+
+	dialector := postgres.New(postgres.Config{
+		Conn: mockDb,
+	})
+	db, err := gorm.Open(dialector, &gorm.Config{})
+	assert.NoError(t, err)
+
+	cfg := &config.Config{
+		ServerPort: "8080",
+	}
+
+	application := NewApiApp(db, cfg)
+
+	assert.NotNil(t, application)
+	assert.Equal(t, cfg, application.Config)
+	assert.Equal(t, db, application.DB)
+	assert.NotNil(t, application.JobHandler)
+	assert.NotNil(t, application.Router)
+	assert.NotNil(t, application.Server)
+}
 
 func TestApp_Ready_Success(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})

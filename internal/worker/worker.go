@@ -4,19 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
+	"math"
+	"math/rand/v2"
 	"sync"
 	"time"
 
+	"github.com/joshu-sajeev/goqueue/internal/config"
 	"github.com/joshu-sajeev/goqueue/internal/dto"
 	"github.com/joshu-sajeev/goqueue/internal/job"
 	"gorm.io/datatypes"
 )
-
-type JobRepository interface {
-	AcquireNext(ctx context.Context, queue string, workerID uint, lockDuration time.Duration) (*dto.JobDTO, error)
-	RetryLater(ctx context.Context, id uint, availableAt time.Time) error
-	MarkCompleted(ctx context.Context, id uint, result datatypes.JSON) error
-}
 
 type Worker struct {
 	ID              int
@@ -88,8 +86,7 @@ func (w *Worker) process(ctx context.Context, job *dto.JobDTO) {
 	res, err := w.execute(ctx, job)
 
 	if err != nil {
-		nextRun := time.Now().Add(10 * time.Second)
-		w.jobRepo.RetryLater(ctx, job.ID, nextRun)
+		w.handleFailure(ctx, job, err)
 		return
 	}
 
@@ -97,6 +94,70 @@ func (w *Worker) process(ctx context.Context, job *dto.JobDTO) {
 	w.jobRepo.MarkCompleted(ctx, job.ID, datatypes.JSON(b))
 }
 
+func (w *Worker) handleFailure(ctx context.Context, job *dto.JobDTO, execErr error) {
+	// First, fetch the full job to get current attempts and max_retries
+	fullJob, err := w.jobRepo.Get(ctx, job.ID)
+	if err != nil {
+		log.Printf("Worker %d: Failed to fetch job %d for retry logic: %v", w.ID, job.ID, err)
+		return
+	}
+
+	// Increment attempts
+	if err := w.jobRepo.IncrementAttempts(ctx, job.ID); err != nil {
+		log.Printf("Worker %d: Failed to increment attempts for job %d: %v", w.ID, job.ID, err)
+		return
+	}
+
+	currentAttempts := fullJob.Attempts + 1 // +1 because we just incremented
+
+	// Check if we've exceeded max retries
+	if currentAttempts >= fullJob.MaxRetries {
+		log.Printf("Worker %d: Job %d exceeded max retries (%d/%d). Marking as failed.",
+			w.ID, job.ID, currentAttempts, fullJob.MaxRetries)
+
+		// Mark as permanently failed
+		errorMsg := fmt.Sprintf("Max retries exceeded. Last error: %v", execErr)
+		w.jobRepo.SaveResult(ctx, job.ID, nil, errorMsg)
+		w.jobRepo.UpdateStatus(ctx, job.ID, config.JobStatusFailed)
+		return
+	}
+
+	// Calculate exponential backoff delay
+	delay := w.calculateBackoff(currentAttempts)
+	nextRun := time.Now().Add(delay)
+
+	log.Printf("Worker %d: Job %d failed (attempt %d/%d). Retrying in %v. Error: %v",
+		w.ID, job.ID, currentAttempts, fullJob.MaxRetries, delay, execErr)
+
+	// Schedule retry
+	if err := w.jobRepo.RetryLater(ctx, job.ID, nextRun); err != nil {
+		log.Printf("Worker %d: Failed to schedule retry for job %d: %v", w.ID, job.ID, err)
+	}
+}
+
+// calculateBackoff returns exponential backoff duration with jitter
+func (w *Worker) calculateBackoff(attempts int) time.Duration {
+	// Base delay: 10 seconds
+	baseDelay := 10 * time.Second
+
+	// Maximum delay: 1 hour
+	maxDelay := 1 * time.Hour
+
+	// Calculate exponential backoff: base * 2^(attempts-1)
+	// attempts=1: 10s, attempts=2: 20s, attempts=3: 40s, attempts=4: 80s, etc.
+	delay := float64(baseDelay) * math.Pow(2, float64(attempts-1))
+
+	// Cap at max delay
+	if delay > float64(maxDelay) {
+		delay = float64(maxDelay)
+	}
+
+	// Add jitter (±20% randomness) to prevent thundering herd
+	jitter := (rand.Float64() * 0.4) - 0.2 // Range: -0.2 to +0.2
+	delay = delay * (1 + jitter)
+
+	return time.Duration(delay)
+}
 func (w *Worker) execute(ctx context.Context, job *dto.JobDTO) (any, error) {
 	queue := job.Queue
 	if queue == "default" {

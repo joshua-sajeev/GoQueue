@@ -94,7 +94,6 @@ func (w *Worker) process(ctx context.Context, job *dto.JobDTO) {
 	w.jobRepo.MarkCompleted(ctx, job.ID, datatypes.JSON(b))
 }
 
-// CRITICAL FIX: Use atomic IncrementAttemptsAndGet to prevent race conditions
 func (w *Worker) handleFailure(ctx context.Context, job *dto.JobDTO, execErr error) {
 	// Atomically increment and get current values (prevents race conditions)
 	currentAttempts, maxRetries, err := w.jobRepo.IncrementAttemptsAndGet(ctx, job.ID)

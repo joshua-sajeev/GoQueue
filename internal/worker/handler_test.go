@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/joshu-sajeev/goqueue/internal/dto"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gorm.io/datatypes"
 )
 
@@ -15,36 +17,67 @@ func TestSendEmailHandler(t *testing.T) {
 		name      string
 		payload   any
 		ctx       context.Context
-		expectErr bool
+		wantErr   bool
+		errMsg    string
+		checkResp func(*testing.T, any)
 	}{
 		{
-			name: "success",
+			name: "success with valid payload",
 			payload: dto.SendEmailPayload{
 				To:      "test@example.com",
 				Subject: "Hello",
 				Body:    "Test email",
 			},
-			ctx:       context.Background(),
-			expectErr: false,
+			ctx:     context.Background(),
+			wantErr: false,
+			checkResp: func(t *testing.T, resp any) {
+				result := resp.(map[string]any)
+				assert.Equal(t, "test@example.com", result["to"])
+				assert.Equal(t, "Hello", result["subject"])
+				assert.NotEmpty(t, result["message_id"])
+			},
 		},
 		{
-			name:      "invalid json",
-			payload:   "invalid-json",
-			ctx:       context.Background(),
-			expectErr: true,
+			name:    "error - missing 'to' field",
+			payload: dto.SendEmailPayload{Subject: "Hello", Body: "Test"},
+			ctx:     context.Background(),
+			wantErr: true,
+			errMsg:  "'to' field is required",
 		},
 		{
-			name: "context cancelled",
+			name:    "error - missing 'subject' field",
+			payload: dto.SendEmailPayload{To: "test@example.com", Body: "Test"},
+			ctx:     context.Background(),
+			wantErr: true,
+			errMsg:  "'subject' field is required",
+		},
+		{
+			name:    "error - missing 'body' field",
+			payload: dto.SendEmailPayload{To: "test@example.com", Subject: "Hello"},
+			ctx:     context.Background(),
+			wantErr: true,
+			errMsg:  "'body' field is required",
+		},
+		{
+			name:    "error - invalid json",
+			payload: "invalid-json",
+			ctx:     context.Background(),
+			wantErr: true,
+			errMsg:  "unmarshal email payload",
+		},
+		{
+			name: "error - context cancelled",
 			payload: dto.SendEmailPayload{
 				To:      "test@example.com",
 				Subject: "Hello",
+				Body:    "Test",
 			},
 			ctx: func() context.Context {
 				ctx, cancel := context.WithCancel(context.Background())
 				cancel()
 				return ctx
 			}(),
-			expectErr: true,
+			wantErr: true,
 		},
 	}
 
@@ -62,19 +95,19 @@ func TestSendEmailHandler(t *testing.T) {
 
 			res, err := SendEmailHandler(tt.ctx, data)
 
-			if tt.expectErr && err == nil {
-				t.Fatalf("expected error, got nil")
-			}
-
-			if !tt.expectErr && err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if !tt.expectErr {
-				result := res.(map[string]any)
-				if result["to"] == "" {
-					t.Errorf("expected 'to' field in result")
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg)
 				}
+				return
+			}
+
+			require.NoError(t, err)
+			require.NotNil(t, res)
+
+			if tt.checkResp != nil {
+				tt.checkResp(t, res)
 			}
 		})
 	}
@@ -85,31 +118,117 @@ func TestProcessPaymentHandler(t *testing.T) {
 		name      string
 		payload   dto.ProcessPaymentPayload
 		ctx       context.Context
-		expectErr bool
+		wantErr   bool
+		errMsg    string
+		checkResp func(*testing.T, any)
 	}{
 		{
-			name: "success",
+			name: "success with valid payload",
 			payload: dto.ProcessPaymentPayload{
 				PaymentID: "pay_123",
+				UserID:    "user_456",
 				Amount:    499.99,
 				Currency:  "INR",
+				Method:    "card",
 			},
-			ctx:       context.Background(),
-			expectErr: false,
+			ctx:     context.Background(),
+			wantErr: false,
+			checkResp: func(t *testing.T, resp any) {
+				result := resp.(map[string]any)
+				assert.Equal(t, "pay_123", result["payment_id"])
+				assert.Equal(t, "completed", result["status"])
+				assert.Equal(t, 499.99, result["amount"])
+			},
 		},
 		{
-			name: "context cancelled",
+			name: "error - missing payment_id",
+			payload: dto.ProcessPaymentPayload{
+				UserID:   "user_456",
+				Amount:   100,
+				Currency: "USD",
+				Method:   "card",
+			},
+			ctx:     context.Background(),
+			wantErr: true,
+			errMsg:  "'payment_id' field is required",
+		},
+		{
+			name: "error - missing user_id",
 			payload: dto.ProcessPaymentPayload{
 				PaymentID: "pay_123",
 				Amount:    100,
 				Currency:  "USD",
+				Method:    "card",
+			},
+			ctx:     context.Background(),
+			wantErr: true,
+			errMsg:  "'user_id' field is required",
+		},
+		{
+			name: "error - zero amount",
+			payload: dto.ProcessPaymentPayload{
+				PaymentID: "pay_123",
+				UserID:    "user_456",
+				Amount:    0,
+				Currency:  "USD",
+				Method:    "card",
+			},
+			ctx:     context.Background(),
+			wantErr: true,
+			errMsg:  "'amount' must be greater than 0",
+		},
+		{
+			name: "error - negative amount",
+			payload: dto.ProcessPaymentPayload{
+				PaymentID: "pay_123",
+				UserID:    "user_456",
+				Amount:    -10,
+				Currency:  "USD",
+				Method:    "card",
+			},
+			ctx:     context.Background(),
+			wantErr: true,
+			errMsg:  "'amount' must be greater than 0",
+		},
+		{
+			name: "error - missing currency",
+			payload: dto.ProcessPaymentPayload{
+				PaymentID: "pay_123",
+				UserID:    "user_456",
+				Amount:    100,
+				Method:    "card",
+			},
+			ctx:     context.Background(),
+			wantErr: true,
+			errMsg:  "'currency' field is required",
+		},
+		{
+			name: "error - missing method",
+			payload: dto.ProcessPaymentPayload{
+				PaymentID: "pay_123",
+				UserID:    "user_456",
+				Amount:    100,
+				Currency:  "USD",
+			},
+			ctx:     context.Background(),
+			wantErr: true,
+			errMsg:  "'method' field is required",
+		},
+		{
+			name: "error - context cancelled",
+			payload: dto.ProcessPaymentPayload{
+				PaymentID: "pay_123",
+				UserID:    "user_456",
+				Amount:    100,
+				Currency:  "USD",
+				Method:    "card",
 			},
 			ctx: func() context.Context {
 				ctx, cancel := context.WithCancel(context.Background())
 				cancel()
 				return ctx
 			}(),
-			expectErr: true,
+			wantErr: true,
 		},
 	}
 
@@ -119,19 +238,19 @@ func TestProcessPaymentHandler(t *testing.T) {
 
 			res, err := ProcessPaymentHandler(tt.ctx, datatypes.JSON(data))
 
-			if tt.expectErr && err == nil {
-				t.Fatalf("expected error, got nil")
-			}
-
-			if !tt.expectErr && err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if !tt.expectErr {
-				result := res.(map[string]any)
-				if result["status"] != "completed" {
-					t.Errorf("expected status completed, got %v", result["status"])
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg)
 				}
+				return
+			}
+
+			require.NoError(t, err)
+			require.NotNil(t, res)
+
+			if tt.checkResp != nil {
+				tt.checkResp(t, res)
 			}
 		})
 	}
@@ -142,21 +261,60 @@ func TestSendWebhookHandler(t *testing.T) {
 		name      string
 		payload   dto.SendWebhookPayload
 		ctx       context.Context
-		expectErr bool
+		wantErr   bool
+		errMsg    string
+		checkResp func(*testing.T, any)
 	}{
 		{
-			name: "success",
+			name: "success with valid payload",
 			payload: dto.SendWebhookPayload{
 				URL:     "https://example.com/webhook",
 				Method:  "POST",
 				Body:    []byte(`{"event":"test"}`),
 				Timeout: 50,
 			},
-			ctx:       context.Background(),
-			expectErr: false,
+			ctx:     context.Background(),
+			wantErr: false,
+			checkResp: func(t *testing.T, resp any) {
+				result := resp.(map[string]any)
+				assert.Equal(t, "https://example.com/webhook", result["url"])
+				assert.Equal(t, "POST", result["method"])
+				assert.Equal(t, 200, result["status_code"])
+			},
 		},
 		{
-			name: "context timeout",
+			name: "error - missing url",
+			payload: dto.SendWebhookPayload{
+				Method:  "POST",
+				Timeout: 10,
+			},
+			ctx:     context.Background(),
+			wantErr: true,
+			errMsg:  "'url' field is required",
+		},
+		{
+			name: "error - missing method",
+			payload: dto.SendWebhookPayload{
+				URL:     "https://example.com",
+				Timeout: 10,
+			},
+			ctx:     context.Background(),
+			wantErr: true,
+			errMsg:  "'method' field is required",
+		},
+		{
+			name: "error - zero timeout",
+			payload: dto.SendWebhookPayload{
+				URL:     "https://example.com",
+				Method:  "POST",
+				Timeout: 0,
+			},
+			ctx:     context.Background(),
+			wantErr: true,
+			errMsg:  "'timeout' must be greater than 0",
+		},
+		{
+			name: "error - context timeout",
 			payload: dto.SendWebhookPayload{
 				URL:     "https://example.com/webhook",
 				Method:  "POST",
@@ -167,7 +325,8 @@ func TestSendWebhookHandler(t *testing.T) {
 				defer cancel()
 				return ctx
 			}(),
-			expectErr: true,
+			wantErr: true,
+			errMsg:  "cancelled or timeout",
 		},
 	}
 
@@ -175,14 +334,21 @@ func TestSendWebhookHandler(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			data, _ := json.Marshal(tt.payload)
 
-			_, err := SendWebhookHandler(tt.ctx, datatypes.JSON(data))
+			res, err := SendWebhookHandler(tt.ctx, datatypes.JSON(data))
 
-			if tt.expectErr && err == nil {
-				t.Fatalf("expected error, got nil")
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errMsg != "" {
+					assert.Contains(t, err.Error(), tt.errMsg)
+				}
+				return
 			}
 
-			if !tt.expectErr && err != nil {
-				t.Fatalf("unexpected error: %v", err)
+			require.NoError(t, err)
+			require.NotNil(t, res)
+
+			if tt.checkResp != nil {
+				tt.checkResp(t, res)
 			}
 		})
 	}

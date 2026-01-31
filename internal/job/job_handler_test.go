@@ -353,7 +353,7 @@ func TestJobHandler_List(t *testing.T) {
 
 	expectedDTOs := []dto.JobResponseDTO{
 		{
-			ID: 1, Queue: "default",  Status: config.JobStatusQueued,
+			ID: 1, Queue: "default",Status: config.JobStatusQueued,
 			Payload:    json.RawMessage(`{}`),
 			Attempts:   0,
 			MaxRetries: 0,
@@ -361,7 +361,7 @@ func TestJobHandler_List(t *testing.T) {
 			UpdatedAt:  time.Time{},
 		},
 		{
-			ID: 2, Queue: "default",  Status: config.JobStatusQueued,
+			ID: 2, Queue: "default",Status: config.JobStatusQueued,
 			Payload:    json.RawMessage(`{}`),
 			Attempts:   0,
 			MaxRetries: 0,

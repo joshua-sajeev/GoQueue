@@ -116,38 +116,10 @@ func TestJobService_CreateJob(t *testing.T) {
 			errContains:  "invalid queue",
 			skipRepoCall: true,
 		},
-		// {
-		// 	name: "invalid job type",
-		// 	dto: &dto.JobCreateDTO{
-		// 		Queue:   "default",
-		// 		Payload: validPayload,
-		// 	},
-		// 	setupMock: func(m *mocks.JobRepoMock) {},
-		// 	setupCtx: func() context.Context {
-		// 		return context.Background()
-		// 	},
-		// 	wantErr:      true,
-		// 	errContains:  "invalid job type",
-		// 	skipRepoCall: true,
-		// },
-		// {
-		// 	name: "empty job type",
-		// 	dto: &dto.JobCreateDTO{
-		// 		Queue:   "default",
-		// 		Payload: validPayload,
-		// 	},
-		// 	setupMock: func(m *mocks.JobRepoMock) {},
-		// 	setupCtx: func() context.Context {
-		// 		return context.Background()
-		// 	},
-		// 	wantErr:      true,
-		// 	errContains:  "invalid job type",
-		// 	skipRepoCall: true,
-		// },
 		{
-			name: "valid queue - webhooks",
+			name: "valid queue - webhook",
 			dto: &dto.JobCreateDTO{
-				Queue:   "webhooks",
+				Queue:   "webhook",
 				Payload: validWebhookPayload,
 			},
 			setupMock: func(m *mocks.JobRepoMock) {

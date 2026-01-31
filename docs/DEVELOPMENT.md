@@ -336,7 +336,7 @@ internal/
 var AllowedQueues = []string{
     "default",
     "email",
-    "webhooks",
+    "webhook",
     "sms", // New
 }
 ```

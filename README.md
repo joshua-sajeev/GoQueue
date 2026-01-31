@@ -61,7 +61,7 @@ curl http://localhost:8080/jobs?queue=email
 
 - REST API with Gin framework
 - PostgreSQL storage with GORM
-- Multiple queues (default, email, webhooks)
+- Multiple queues (default, email, webhook)
 - Request validation and timeout handling
 - Database migrations with Goose
 - Hot reload development environment

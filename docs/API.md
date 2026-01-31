@@ -97,7 +97,7 @@ Content-Type: application/json
 ```
 
 **Parameters:**
-- `queue` (string, required): Queue name. Allowed: `default`, `email`, `webhooks`
+- `queue` (string, required): Queue name. Allowed: `default`, `email`, `webhook`
 - `payload` (object, required): Job-specific payload 
 - `max_retries` (integer, optional): Maximum retry attempts (0-20). Default: 3
 
@@ -122,7 +122,7 @@ Content-Type: application/json
   "error": "invalid queue",
   "fields": {
     "provided": "invalid_queue",
-    "allowed": ["default", "email", "webhooks"]
+    "allowed": ["default", "email", "webhook"]
   }
 }
 ```
@@ -438,7 +438,7 @@ curl -X POST http://localhost:8080/jobs/create \
 
 ### 3. Webhook
 
-**Queue:** `webhooks`
+**Queue:** `webhook`
 
 **Payload Schema:**
 ```json
@@ -469,7 +469,7 @@ curl -X POST http://localhost:8080/jobs/create \
 curl -X POST http://localhost:8080/jobs/create \
   -H "Content-Type: application/json" \
   -d '{
-    "queue": "webhooks",
+    "queue": "webhook",
     "payload": {
       "url": "https://example.com/webhook",
       "method": "POST",

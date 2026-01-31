@@ -240,7 +240,7 @@ CREATE INDEX idx_jobs_status ON jobs(status);
 
 **Fields:**
 - `id`: Auto-incrementing primary key
-- `queue`: Queue name (default, email, webhooks)
+- `queue`: Queue name (default, email, webhook)
 - `payload`: Job-specific data as JSONB
 - `status`: Current status (queued, running, completed, failed)
 - `attempts`: Number of execution attempts
@@ -258,7 +258,7 @@ CREATE INDEX idx_jobs_status ON jobs(status);
 **Location:** `internal/config/constants.go`
 
 ```go
-AllowedQueues = []string{"default", "email", "webhooks"}
+AllowedQueues = []string{"default", "email", "webhook"}
 ```
 
 

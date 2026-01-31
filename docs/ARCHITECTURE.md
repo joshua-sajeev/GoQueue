@@ -234,10 +234,10 @@ Every repository method accepts `context.Context`. The API middleware sets a 5s 
 
 ## Testing strategy
 
-| Layer | Approach |
-|-------|---------|
-| Handler | Mock service via `JobServiceMock` |
-| Service | Mock repository via `JobRepoMock` |
-| Repository | Integration tests against real PostgreSQL (dockertest) |
-| Worker | Mock repository; tests cover process, handleFailure, backoff, pullJob, Start |
-| App | Mock HTTP server + sqlmock |
+| Layer      | Approach                                                                     |
+| ---------- | ---------------------------------------------------------------------------- |
+| Handler    | Mock service via `JobServiceMock`                                            |
+| Service    | Mock repository via `JobRepoMock`                                            |
+| Repository | Integration tests against real PostgreSQL (dockertest)                       |
+| Worker     | Mock repository; tests cover process, handleFailure, backoff, pullJob, Start |
+| App        | Mock HTTP server + sqlmock                                                   |

@@ -58,7 +58,7 @@ func TestJobHandler_Create(t *testing.T) {
 				m.On("CreateJob", mock.Anything, mock.Anything).
 					Return(common.NewAPIError(http.StatusBadRequest, "invalid queue", map[string]any{
 						"provided": "invalid_queue",
-						"allowed":  []string{"default", "email", "reports", "webhooks"},
+						"allowed":  []string{"default", "email", "reports", "webhook"},
 					}))
 			},
 			expectedStatus: http.StatusBadRequest,

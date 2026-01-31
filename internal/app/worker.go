@@ -22,7 +22,7 @@ type WorkerApp struct {
 
 func NewWorkerApp(db *gorm.DB, cfg *config.Config) *WorkerApp {
 	repo := postgres.NewJobRepository(db)
-	queues := []string{"email", "payment", "default", "webhooks"}
+	queues := []string{"email", "payment", "default", "webhook"}
 
 	maxWorkers := 10
 	if v := cfg.MaxWorkers; v > 0 {

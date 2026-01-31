@@ -22,6 +22,7 @@ type JobRepoInterface interface {
 	Get(ctx context.Context, id uint) (*models.Job, error)
 	UpdateStatus(ctx context.Context, id uint, status config.JobStatus) error
 	IncrementAttempts(ctx context.Context, id uint) error
+	IncrementAttemptsAndGet(ctx context.Context, id uint) (attempts int, maxRetries int, err error)
 	SaveResult(ctx context.Context, id uint, result datatypes.JSON, err string) error
 	List(ctx context.Context, queue string) ([]models.Job, error)
 

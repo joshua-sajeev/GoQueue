@@ -37,6 +37,11 @@ func (m *JobRepoMock) IncrementAttempts(ctx context.Context, id uint) error {
 	return args.Error(0)
 }
 
+func (m *JobRepoMock) IncrementAttemptsAndGet(ctx context.Context, id uint) (int, int, error) {
+	args := m.Called(ctx, id)
+	return args.Int(0), args.Int(1), args.Error(2)
+}
+
 func (m *JobRepoMock) SaveResult(
 	ctx context.Context,
 	id uint,

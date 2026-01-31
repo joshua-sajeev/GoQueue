@@ -94,26 +94,19 @@ func (w *Worker) process(ctx context.Context, job *dto.JobDTO) {
 	w.jobRepo.MarkCompleted(ctx, job.ID, datatypes.JSON(b))
 }
 
+// CRITICAL FIX: Use atomic IncrementAttemptsAndGet to prevent race conditions
 func (w *Worker) handleFailure(ctx context.Context, job *dto.JobDTO, execErr error) {
-	// First, fetch the full job to get current attempts and max_retries
-	fullJob, err := w.jobRepo.Get(ctx, job.ID)
+	// Atomically increment and get current values (prevents race conditions)
+	currentAttempts, maxRetries, err := w.jobRepo.IncrementAttemptsAndGet(ctx, job.ID)
 	if err != nil {
-		log.Printf("Worker %d: Failed to fetch job %d for retry logic: %v", w.ID, job.ID, err)
-		return
-	}
-
-	// Increment attempts
-	if err := w.jobRepo.IncrementAttempts(ctx, job.ID); err != nil {
 		log.Printf("Worker %d: Failed to increment attempts for job %d: %v", w.ID, job.ID, err)
 		return
 	}
 
-	currentAttempts := fullJob.Attempts + 1 // +1 because we just incremented
-
 	// Check if we've exceeded max retries
-	if currentAttempts >= fullJob.MaxRetries {
+	if currentAttempts >= maxRetries {
 		log.Printf("Worker %d: Job %d exceeded max retries (%d/%d). Marking as failed.",
-			w.ID, job.ID, currentAttempts, fullJob.MaxRetries)
+			w.ID, job.ID, currentAttempts, maxRetries)
 
 		// Mark as permanently failed
 		errorMsg := fmt.Sprintf("Max retries exceeded. Last error: %v", execErr)
@@ -127,9 +120,9 @@ func (w *Worker) handleFailure(ctx context.Context, job *dto.JobDTO, execErr err
 	nextRun := time.Now().Add(delay)
 
 	log.Printf("Worker %d: Job %d failed (attempt %d/%d). Retrying in %v. Error: %v",
-		w.ID, job.ID, currentAttempts, fullJob.MaxRetries, delay, execErr)
+		w.ID, job.ID, currentAttempts, maxRetries, delay, execErr)
 
-	// Schedule retry
+	// Schedule retry (this now clears locks properly)
 	if err := w.jobRepo.RetryLater(ctx, job.ID, nextRun); err != nil {
 		log.Printf("Worker %d: Failed to schedule retry for job %d: %v", w.ID, job.ID, err)
 	}
@@ -158,6 +151,7 @@ func (w *Worker) calculateBackoff(attempts int) time.Duration {
 
 	return time.Duration(delay)
 }
+
 func (w *Worker) execute(ctx context.Context, job *dto.JobDTO) (any, error) {
 	queue := job.Queue
 	if queue == "default" {
@@ -169,7 +163,7 @@ func (w *Worker) execute(ctx context.Context, job *dto.JobDTO) (any, error) {
 		return SendEmailHandler(ctx, job.Payload)
 	case "payment":
 		return ProcessPaymentHandler(ctx, job.Payload)
-	case "webhooks":
+	case "webhook":
 		return SendWebhookHandler(ctx, job.Payload)
 	default:
 		return nil, fmt.Errorf("unknown queue: %s", job.Queue)

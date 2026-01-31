@@ -18,6 +18,17 @@ func SendEmailHandler(ctx context.Context, payload datatypes.JSON) (any, error) 
 		return nil, fmt.Errorf("unmarshal email payload: %w", err)
 	}
 
+	// Validate required fields
+	if email.To == "" {
+		return nil, fmt.Errorf("email 'to' field is required")
+	}
+	if email.Subject == "" {
+		return nil, fmt.Errorf("email 'subject' field is required")
+	}
+	if email.Body == "" {
+		return nil, fmt.Errorf("email 'body' field is required")
+	}
+
 	// Simulate email sending delay
 	select {
 	case <-time.After(100 * time.Millisecond):
@@ -40,6 +51,23 @@ func ProcessPaymentHandler(ctx context.Context, payload datatypes.JSON) (any, er
 	var payment dto.ProcessPaymentPayload
 	if err := json.Unmarshal(payload, &payment); err != nil {
 		return nil, fmt.Errorf("unmarshal payment payload: %w", err)
+	}
+
+	// Validate required fields
+	if payment.PaymentID == "" {
+		return nil, fmt.Errorf("payment 'payment_id' field is required")
+	}
+	if payment.UserID == "" {
+		return nil, fmt.Errorf("payment 'user_id' field is required")
+	}
+	if payment.Amount <= 0 {
+		return nil, fmt.Errorf("payment 'amount' must be greater than 0")
+	}
+	if payment.Currency == "" {
+		return nil, fmt.Errorf("payment 'currency' field is required")
+	}
+	if payment.Method == "" {
+		return nil, fmt.Errorf("payment 'method' field is required")
 	}
 
 	// Simulate payment gateway delay
@@ -68,9 +96,20 @@ func SendWebhookHandler(ctx context.Context, payload datatypes.JSON) (any, error
 		return nil, fmt.Errorf("unmarshal webhook payload: %w", err)
 	}
 
+	// Validate required fields
+	if webhook.URL == "" {
+		return nil, fmt.Errorf("webhook 'url' field is required")
+	}
+	if webhook.Method == "" {
+		return nil, fmt.Errorf("webhook 'method' field is required")
+	}
+	if webhook.Timeout <= 0 {
+		return nil, fmt.Errorf("webhook 'timeout' must be greater than 0")
+	}
+
 	// Simulate network delay
 	delay := time.Duration(webhook.Timeout) * time.Millisecond
-	log.Printf("🔔 Simulating webhook to %s with delay %v ms", webhook.URL, delay)
+	log.Printf("🔔 Simulating webhook to %s with delay %v", webhook.URL, delay)
 	select {
 	case <-time.After(delay):
 		// Simulated successful response

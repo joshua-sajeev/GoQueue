@@ -79,6 +79,35 @@ func (r *JobRepository) IncrementAttempts(ctx context.Context, id uint) error {
 	return nil
 }
 
+// IncrementAttemptsAndGet atomically increments attempts and returns current values
+// This prevents race conditions when checking retry limits
+func (r *JobRepository) IncrementAttemptsAndGet(ctx context.Context, id uint) (attempts int, maxRetries int, err error) {
+	var job models.Job
+
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Lock the row and increment atomically
+		if err := tx.Model(&models.Job{}).
+			Where("id = ?", id).
+			Update("attempts", gorm.Expr("attempts + ?", 1)).Error; err != nil {
+			return err
+		}
+
+		// Read the updated values
+		if err := tx.Select("attempts", "max_retries").
+			First(&job, id).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return 0, 0, fmt.Errorf("increment and get: %w", err)
+	}
+
+	return job.Attempts, job.MaxRetries, nil
+}
+
 // SaveResult persists the result and error message for a completed job.
 // Both fields are updated atomically in a single operation. Use this to
 // store job execution results after the job has finished running.

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/joshu-sajeev/goqueue/internal/dto"
+	"github.com/joshu-sajeev/goqueue/internal/job"
 	"gorm.io/datatypes"
 )
 
@@ -19,7 +20,7 @@ type JobRepository interface {
 
 type Worker struct {
 	ID              int
-	jobRepo         JobRepository
+	jobRepo         job.JobRepoInterface
 	queues          []string
 	lockDuration    time.Duration
 	quit            chan struct{}
@@ -28,7 +29,7 @@ type Worker struct {
 	wg              sync.WaitGroup
 }
 
-func NewWorker(id int, repo JobRepository, queues []string, dur time.Duration, pi time.Duration, mi time.Duration) *Worker {
+func NewWorker(id int, repo job.JobRepoInterface, queues []string, dur time.Duration, pi time.Duration, mi time.Duration) *Worker {
 	return &Worker{ID: id, jobRepo: repo, queues: queues, lockDuration: dur, quit: make(chan struct{}), PollInterval: pi, MaxPollInterval: mi}
 }
 

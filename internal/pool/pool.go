@@ -6,20 +6,20 @@ import (
 	"sync"
 	"time"
 
-	"github.com/joshu-sajeev/goqueue/internal/storage/postgres"
+	"github.com/joshu-sajeev/goqueue/internal/job"
 	"github.com/joshu-sajeev/goqueue/internal/worker"
 )
 
 type WorkerPool struct {
 	workers      []*worker.Worker
-	jobRepo      *postgres.JobRepository
+	jobRepo      job.JobRepoInterface
 	lockDuration time.Duration
 	wg           sync.WaitGroup
 	ctx          context.Context
 	cancel       context.CancelFunc
 }
 
-func NewWorkerPool(count int, repo *postgres.JobRepository, queues []string, dur time.Duration) *WorkerPool {
+func NewWorkerPool(count int, repo job.JobRepoInterface, queues []string, dur time.Duration) *WorkerPool {
 	ctx, cancel := context.WithCancel(context.Background())
 	p := &WorkerPool{jobRepo: repo, lockDuration: dur, ctx: ctx, cancel: cancel}
 

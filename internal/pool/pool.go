@@ -62,3 +62,9 @@ func (p *WorkerPool) Stop() {
 	}
 	p.wg.Wait()
 }
+
+// WorkerCount returns the number of workers in the pool.
+// Used by the health endpoint to report pool size.
+func (p *WorkerPool) WorkerCount() int {
+	return len(p.workers)
+}

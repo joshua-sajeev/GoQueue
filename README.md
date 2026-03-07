@@ -4,9 +4,7 @@ Distributed job queue system in Go with API, Worker, Scheduler and PostgreSQL/Re
 
 ## Overview
 
-GoQueue provides a REST API for asynchronous job processing with PostgreSQL persistence, multiple queue support, and configurable retry mechanisms.
-
-**Current Status**: Phase 1 (85% complete) - Core API and storage layer implemented. Redis broker and worker service in progress.
+GoQueue is a background job processing system built around a polling-based worker model. Jobs are submitted via REST API, persisted in PostgreSQL, and processed by a configurable worker pool. Workers claim jobs using row-level locking (FOR UPDATE SKIP LOCKED) to prevent double-processing across concurrent goroutines.
 
 ## Quick Start
 
@@ -19,10 +17,11 @@ GoQueue provides a REST API for asynchronous job processing with PostgreSQL pers
 ### Installation
 
 ```bash
-git clone https://github.com/joshu-sajeev/goqueue.git
+git clone https://github.com/joshua-sajeev/goqueue.git
 cd goqueue
 cp deployments/.env.example deployments/.env
-make compose-up
+# Edit deployments/.env with your credentials
+make up
 ```
 
 API available at `http://localhost:8080`
@@ -54,35 +53,45 @@ curl http://localhost:8080/jobs?queue=email
 - **[API.md](./docs/API.md)** - API endpoints and examples
 - **[ARCHITECTURE.md](./docs/ARCHITECTURE.md)** - System design and components
 - **[DEVELOPMENT.md](./docs/DEVELOPMENT.md)** - Setup and contribution guide
-- **[ROADMAP.md](./docs/ROADMAP.md)** - Project plan and timeline
 - **[ERRORS.md](./docs/ERRORS.md)** - Troubleshooting guide
 
 ## Key Features
 
-- REST API with Gin framework
-- PostgreSQL storage with GORM
-- Multiple queues (default, email, webhooks)
-- Request validation and timeout handling
-- Database migrations with Goose
-- Hot reload development environment
-- Comprehensive test coverage
+- REST API with Gin — create, fetch, update, and list jobs
+- Worker pool — configurable number of concurrent workers (MAX_WORKERS env)
+- Atomic job locking — FOR UPDATE SKIP LOCKED prevents double-processing
+- Exponential backoff with jitter — failed jobs retry with 10s base, 1h cap, ±20% jitter
+- Janitor goroutine — auto-recovers stuck jobs (locked longer than 2× lock duration)
+- Three job queues — email, payment, webhook with per-queue payload validation
+- DB migrations — Goose-managed schema versioning
+- Comprehensive tests — unit tests with mocks, integration tests against real PostgreSQL via dockertest
 
 ## Common Commands
 
 ```bash
-make compose-up          # Start services
-make compose-down        # Stop services
-make compose-logs        # View logs
-make migrate-up          # Run migrations
-make db-connect          # Database shell
-make help               # Show all commands
+make up              # Start API + Worker + Postgres
+make down            # Stop all services
+make logs            # Tail all logs
+make api-logs        # Tail API logs only
+make worker-logs     # Tail worker logs only
+make migrate-up      # Run pending migrations
+make migrate-status  # Check migration state
+make db-connect      # PostgreSQL shell
+make test            # Run all unit tests
+make bench           # Run benchmarks
+make help            # Full command reference
 ```
 
 ## Testing
 
 ```bash
-go test ./... -v                              # Unit tests
-go test -coverprofile=coverage.out ./...      # With coverage
+go test ./...                          # All unit tests
+go test -v ./...                       # Verbose
+go test -coverprofile=coverage.out ./... && go tool cover -html=coverage.out
+
+# Integration tests (requires Docker)
+go test -run=NONE -bench=. -benchmem ./test/integration   # Benchmarks
+go test ./test/integration/... -v                          # Integration tests
 ```
 
 ## Contributing

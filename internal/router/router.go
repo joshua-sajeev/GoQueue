@@ -35,7 +35,7 @@ func NewRouter(jobHandler *job.JobHandler, db *gorm.DB, readyCheck func() error)
 		jobs.PUT("/:id/status", jobHandler.Update)
 		jobs.POST("/:id/increment", jobHandler.Increment)
 		jobs.POST("/:id/save", jobHandler.Save)
-		jobs.GET("/", jobHandler.List)
+		jobs.GET("", jobHandler.List)
 	}
 	return r
 }

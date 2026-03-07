@@ -1,57 +1,15 @@
-# Architecture Documentation
+# Architecture
 
-System architecture and internal components of GoQueue.
+System design and internal components of GoQueue.
 
-## System Overview
+## Overview
 
-```mermaid
-flowchart LR
-    A[Client submits job via API] --> B[API Server]
-    
-    B --> C[PostgreSQL]
-    
-    B --> D[Redis Queue]
-
-    E[Worker] --> D
-    E --> C
-    E --> F[Process Job]
-
-    F --> C
-
-    G[Client / Dashboard] --> C
-```
-
-## Current Architecture (Phase 1)
+GoQueue is a polling-based distributed job queue. Jobs are submitted via REST API and stored in PostgreSQL. A worker pool continuously polls for available jobs, claiming them with row-level locks to prevent concurrent workers from processing the same job.
 
 ```
-┌─────────────┐
-│   Client    │
-└──────┬──────┘
-       │ HTTP
-       ▼
-┌─────────────────────────────────┐
-│       API Server (Gin)          │
-│  ┌──────────────────────────┐   │
-│  │  Job Handler             │   │
-│  │  (HTTP Request/Response) │   │
-│  └────────┬─────────────────┘   │
-│           │                     │
-│  ┌────────▼─────────────────┐   │
-│  │  Job Service             │   │
-│  │  (Business Logic)        │   │
-│  └────────┬─────────────────┘   │
-│           │                     │
-│  ┌────────▼─────────────────┐   │
-│  │  Job Repository          │   │
-│  │  (Data Access)           │   │
-│  └────────┬─────────────────┘   │
-└───────────┼─────────────────────┘
-            │
-            ▼
-     ┌──────────────┐
-     │  PostgreSQL  │
-     │   (GORM)     │
-     └──────────────┘
+Client → API Server → PostgreSQL ← Worker Pool
+                                        │
+                                    Janitor
 ```
 
 ## Repository Structure
@@ -59,340 +17,210 @@ flowchart LR
 ```
 goqueue/
 ├── cmd/
-│   ├── api/              # API Server - separate binary
-│   ├── worker/           # Worker Service - separate binary (planned)
-│   └── scheduler/        # Scheduler Service - separate binary (planned)
-├── internal/             # Shared internal code
-│   ├── config/           # Configuration constants
-│   │   └── constants.go  # Allowed queues
-│   ├── dto/              # Data Transfer Objects
-│   │   ├── email.go      # Email job payload
-│   │   ├── payment.go    # Payment job payload
-│   │   ├── webhook.go    # Webhook job payload
-│   │   └── job.go        # Job request/response DTOs
-│   ├── job/              # Job domain logic
-│   │   ├── interface.go          # Interface definitions
-│   │   ├── job_handler.go        # HTTP handlers
-│   │   ├── job_service.go        # Business logic
-│   │   └── payload_validation.go # Payload validation
-│   ├── models/           # Database models
-│   │   └── job.go        # Job model
-│   ├── mocks/            # Test mocks
-│   │   ├── job_repo_mock.go
-│   │   └── job_service_mock.go
-│   └── storage/
-│       └── postgres/     # PostgreSQL implementation
-│           ├── connection.go     # DB connection
-│           └── job_repo.go       # Repository
-├── middleware/           # HTTP middleware
-│   ├── error_handler.go  # Error handling
-│   ├── timeout.go        # Request timeout
-│   └── validation.go     # Request validation
-├── common/               # Common utilities
-│   └── error.go          # Error types
-├── migrations/           # Database migrations
-│   └── 20251216131256_create_jobs_table.sql
+│   ├── api/              # API server binary
+│   └── worker/           # Worker service binary
+├── internal/
+│   ├── app/              # Application wiring (ApiApp, WorkerApp)
+│   ├── config/           # Config loading from env + constants
+│   ├── dto/              # Data Transfer Objects (request/response + payloads)
+│   ├── job/              # Job domain: handler, service, payload validation, interfaces
+│   ├── mocks/            # Testify mocks for repo and service
+│   ├── models/           # GORM database model
+│   ├── pool/             # Worker pool + janitor
+│   ├── router/           # Gin router setup
+│   ├── storage/
+│   │   └── postgres/     # DB connection + JobRepository implementation
+│   └── worker/           # Worker loop + job handlers (email, payment, webhook)
+├── middleware/           # Error handler, timeout, request validation
+├── common/               # APIError type
+├── migrations/           # Goose SQL migrations
 ├── test/
-│   └── integration/      # Integration tests
-├── deployments/
-│   ├── docker-compose.dev.yml  # Dev environment
-│   └── .env.example            # Environment variables
-└── docs/                 # Documentation
+│   └── integration/      # DB integration tests + benchmarks
+└── deployments/
+    └── docker-compose.dev.yml
 ```
 
 ## Layer Architecture
 
-### 1. Handler Layer
+```
+HTTP Request
+     │
+     ▼
+┌─────────────────┐
+│  JobHandler     │  Binds request, calls service, formats response
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  JobService     │  Validates queue, validates payload schema, maps errors
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  JobRepository  │  GORM database operations, atomic updates
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   PostgreSQL    │
+└─────────────────┘
+```
 
-**Location:** `internal/job/job_handler.go`
+## Worker Architecture
 
-**Responsibilities:**
-- HTTP request/response handling
-- Route parameter extraction
-- Request body binding
-- Response formatting
+Each binary runs independently. The worker binary starts a `WorkerPool` which spawns N goroutines plus one janitor.
 
-**Key Components:**
-- `JobHandler`: HTTP handler struct
-- Methods for each endpoint (Create, Get, Update, etc.)
-- Gin framework integration
+```
+WorkerPool
+├── Worker 1  (goroutine)
+├── Worker 2  (goroutine)
+├── Worker N  (goroutine)
+└── Janitor   (30s ticker goroutine)
+```
 
-**Example:**
+### Worker loop
+
 ```go
-func (h *JobHandler) Create(c *gin.Context) {
-    var req dto.JobCreateDTO
-    if !middleware.Bind(c, &req) {
-        return
-    }
-    err := h.service.CreateJob(c.Request.Context(), &req)
-    // Handle response
+for {
+    job = AcquireNext(queue, workerID, lockDuration)
+
+    if job != nil:
+        execute(job)
+        → success: MarkCompleted
+        → failure: IncrementAttemptsAndGet
+            → attempts < maxRetries: RetryLater(backoff)
+            → attempts >= maxRetries: SaveResult(error) + UpdateStatus(failed)
+        currentDelay = baseInterval
+    else:
+        currentDelay = min(currentDelay * 2, maxDelay)  // exponential backoff on idle
+
+    select:
+        case <-time.After(currentDelay)
+        case <-quit / ctx.Done: return
 }
 ```
 
-### 2. Service Layer
+### Job locking strategy
 
-**Location:** `internal/job/job_service.go`
+Workers use `FOR UPDATE SKIP LOCKED` to atomically claim jobs from PostgreSQL without coordination overhead:
 
-**Responsibilities:**
-- Business logic validation
-- Queue validation
-- Payload validation by queue
-- Context handling (timeout, cancellation)
-- Error mapping
-
-**Key Components:**
-- `JobService`: Service struct
-- Business rule enforcement
-- DTO to model conversion
-- Type-specific payload validation
-
-**Example:**
-```go
-func (s *JobService) CreateJob(ctx context.Context, dto *dto.JobCreateDTO) error {
-    // Validate queue and type
-    // Validate payload based on queue
-    // Create model
-    // Call repository
-}
+```sql
+SELECT * FROM jobs
+WHERE queue = $1
+  AND status = 'queued'
+  AND available_at <= now()
+  AND (locked_at IS NULL OR locked_at < now() - lock_duration)
+ORDER BY available_at ASC, id ASC
+LIMIT 1
+FOR UPDATE SKIP LOCKED
 ```
 
-### 3. Repository Layer
+`SKIP LOCKED` means concurrent workers never block on each other — they simply skip rows locked by another transaction and move to the next available job. This gives maximum parallelism with zero double-processing.
 
-**Location:** `internal/storage/postgres/job_repo.go`
+After acquiring, the row is updated atomically in the same transaction:
 
-**Responsibilities:**
-- Database operations
-- Query construction
-- Transaction management
-- Error handling
-
-**Key Components:**
-- `JobRepository`: Repository struct
-- CRUD operations
-- Atomic updates (IncrementAttempts)
-
-**Example:**
-```go
-func (r *JobRepository) Create(ctx context.Context, job *models.Job) error {
-    return r.db.WithContext(ctx).Create(job).Error
-}
+```sql
+UPDATE jobs SET status='running', locked_at=$1, locked_by=$2 WHERE id=$3
 ```
 
-## Data Flow
+### Stuck job recovery (Janitor)
 
-### Creating a Job
+The janitor runs every 30 seconds and finds jobs whose lock has expired:
 
-```
-1. Client sends POST /jobs/create
-   ↓
-2. Handler binds and validates request
-   ↓
-3. Service validates business rules
-   ↓
-4. Service validates payload by queue
-   ↓
-5. Service creates Job model
-   ↓
-6. Repository saves to database
-   ↓
-7. Response sent to client
+```sql
+SELECT * FROM jobs
+WHERE status = 'running'
+  AND locked_at < now() - (lock_duration * 2)
 ```
 
-### Getting a Job
+For each stuck job it calls `Release`, which clears the lock and resets status to `queued` so another worker can pick it up.
 
-```
-1. Client sends GET /jobs/:id
-   ↓
-2. Handler extracts ID parameter
-   ↓
-3. Service calls repository
-   ↓
-4. Repository queries database
-   ↓
-5. Service maps model to DTO
-   ↓
-6. Handler formats response
-   ↓
-7. Response sent to client
-```
+### Retry with exponential backoff
+
+Failed jobs are retried with:
+
+- **Base delay:** 10 seconds
+- **Formula:** `base * 2^(attempts-1)`
+- **Cap:** 1 hour
+- **Jitter:** ±20% randomness to prevent thundering herd
+
+Example: attempt 1 → ~10s, attempt 2 → ~20s, attempt 3 → ~40s, …, capped at ~1h.
+
+The `IncrementAttemptsAndGet` call is atomic (uses a DB transaction to increment and read in one operation), preventing race conditions when multiple workers might be retrying the same job.
 
 ## Database Schema
 
-### Jobs Table
-
 ```sql
 CREATE TABLE jobs (
-    id BIGSERIAL PRIMARY KEY,
-    queue VARCHAR(255) NOT NULL,
-    payload JSONB,
-    status VARCHAR(50) NOT NULL DEFAULT 'queued',
-    attempts INT NOT NULL DEFAULT 0,
-    max_retries INT NOT NULL DEFAULT 5,
-    result JSONB,
-    error TEXT,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
-    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
-    deleted_at TIMESTAMP WITH TIME ZONE
+    id           BIGSERIAL PRIMARY KEY,
+    queue        VARCHAR(255) NOT NULL,
+    payload      JSONB,
+    status       VARCHAR(50)  NOT NULL DEFAULT 'queued',
+    attempts     INT          NOT NULL DEFAULT 0,
+    max_retries  INT          NOT NULL DEFAULT 5,
+    available_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    locked_at    TIMESTAMP WITH TIME ZONE,
+    locked_by    BIGINT,
+    result       JSONB,
+    error        TEXT,
+    created_at   TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    updated_at   TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_jobs_status ON jobs(status);
+CREATE INDEX idx_jobs_status         ON jobs(status);
+CREATE INDEX idx_jobs_queue_status   ON jobs(queue, status);
+CREATE INDEX idx_jobs_available_at   ON jobs(available_at);
+CREATE INDEX idx_jobs_locked_at      ON jobs(locked_at);
 ```
 
-**Fields:**
-- `id`: Auto-incrementing primary key
-- `queue`: Queue name (default, email, webhooks)
-- `payload`: Job-specific data as JSONB
-- `status`: Current status (queued, running, completed, failed)
-- `attempts`: Number of execution attempts
-- `max_retries`: Maximum allowed retries
-- `result`: Execution result as JSONB
-- `error`: Error message if failed
-- `created_at`: Creation timestamp
-- `updated_at`: Last update timestamp
-- `deleted_at`: Soft delete timestamp
+**Key fields:**
 
-## Configuration
-
-### Allowed Queues
-
-**Location:** `internal/config/constants.go`
-
-```go
-AllowedQueues = []string{"default", "email", "webhooks"}
-```
-
-
-### Environment Variables
-
-**Location:** `deployments/.env`
-
-```
-POSTGRES_USER=your_user
-POSTGRES_PASSWORD=your_password
-POSTGRES_DB=goqueue
-POSTGRES_HOST=postgres
-POSTGRES_PORT=5432
-DB_MAX_RETRIES=10
-DB_RETRY_DELAY=2s
-DB_LOG_LEVEL=silent
-```
+| Field | Purpose |
+|-------|---------|
+| `available_at` | Earliest time a worker may claim this job — enables delayed/scheduled jobs |
+| `locked_at` | Timestamp when a worker claimed the job; used to detect stuck jobs |
+| `locked_by` | Worker ID that holds the lock |
+| `attempts` | Incremented atomically on each failure |
+| `max_retries` | Job-specific retry limit (0–20, default 3) |
 
 ## Middleware
 
-### 1. Error Handler
-
-**Location:** `middleware/error_handler.go`
-
-Catches errors from handlers and formats consistent error responses.
-
-### 2. Timeout Middleware
-
-**Location:** `middleware/timeout.go`
-
-Adds request timeout context (default 5 seconds).
-
-### 3. Validation Middleware
-
-**Location:** `middleware/validation.go`
-
-Validates request body using struct tags and go-playground/validator.
+| Middleware | Purpose |
+|-----------|---------|
+| `TimeoutMiddleware` | Adds 5s request context timeout |
+| `ErrorHandler` | Catches errors from handlers, formats consistent JSON error responses |
+| `Bind[T]` (generic) | Binds and validates request body using struct tags |
 
 ## Error Handling
 
-### Error Types
-
-**Location:** `common/error.go`
-
-```go
-type APIError struct {
-    Status  int
-    Message string
-    Fields  map[string]any
-}
-```
-
-### Error Flow
+All errors flow as `APIError` structs through `c.Error()` and are caught by `ErrorHandler` middleware:
 
 ```
-1. Error occurs in service/repository
-   ↓
-2. Service wraps with APIError
-   ↓
-3. Handler calls c.Error()
-   ↓
-4. Error middleware catches error
-   ↓
-5. Formats JSON response
-   ↓
-6. Returns to client
+Handler → c.Error(apiErr) → ErrorHandler → JSON response
 ```
 
-## Validation
+Service layer maps repository and context errors to appropriate HTTP codes (400, 404, 408, 500).
 
-### Request Validation
+## Configuration
 
-Uses struct tags with go-playground/validator:
+All config loaded from environment via `sethvargo/go-envconfig`:
 
-```go
-type JobCreateDTO struct {
-    Queue      string          `json:"queue" validate:"required"`
-    Payload    json.RawMessage `json:"payload" validate:"required"`
-    MaxRetries int             `json:"max_retries" validate:"gte=0,lte=20"`
-}
-```
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `POSTGRES_USER` | required | DB username |
+| `POSTGRES_PASSWORD` | required | DB password |
+| `POSTGRES_HOST` | required | DB host |
+| `POSTGRES_PORT` | required | DB port |
+| `POSTGRES_DB` | required | DB name |
+| `DB_MAX_RETRIES` | 10 | Connection retry attempts |
+| `DB_RETRY_DELAY` | 2s | Delay between retries |
+| `DB_LOG_LEVEL` | warn | GORM log level (silent/error/warn/info) |
+| `SERVER_PORT` | 8080 | API server port |
+| `MAX_WORKERS` | 10 | Worker pool size |
 
+## Performance
 
-## Future Architecture (Phase 2+)
-
-### With Redis Broker
-
-```
-┌─────────┐
-│  Client │
-└────┬────┘
-     │
-     ▼
-┌─────────────┐
-│ API Server  │
-└──┬───────┬──┘
-   │       │
-   ▼       ▼
-┌──────┐ ┌───────┐
-│Redis │ │Postgres│
-└──┬───┘ └───────┘
-   │
-   ▼
-┌─────────┐
-│ Worker  │
-└─────────┘
-```
-
-### With Scheduler
-
-```
-┌───────────┐
-│ Scheduler │
-└─────┬─────┘
-      │ (cron)
-      ▼
-┌─────────────┐
-│ API Server  │
-└──┬───────┬──┘
-   │       │
-   ▼       ▼
-┌──────┐ ┌───────┐
-│Redis │ │Postgres│
-└──┬───┘ └───────┘
-   │
-   ▼
-┌─────────┐
-│ Worker  │
-└─────────┘
-```
-
-## Performance Considerations
-
-### Database Connection Pooling
+### Connection pooling
 
 ```go
 sqlDB.SetMaxIdleConns(10)
@@ -400,49 +228,16 @@ sqlDB.SetMaxOpenConns(50)
 sqlDB.SetConnMaxLifetime(time.Hour)
 ```
 
-### Context Timeout
+### Context propagation
 
-All operations respect context timeout (5 seconds default).
+Every repository method accepts `context.Context`. The API middleware sets a 5s timeout on all requests. Workers propagate the pool's cancellation context through all DB operations for clean shutdown.
 
-### Atomic Operations
+## Testing strategy
 
-Using `gorm.Expr` for atomic updates:
-
-```go
-Update("attempts", gorm.Expr("attempts + ?", 1))
-```
-
-## Testing Strategy
-
-### Unit Tests
-- Handler layer: Mock service
-- Service layer: Mock repository
-- Repository layer: Integration tests
-
-### Integration Tests
-- Use Dockertest for PostgreSQL
-- Real database operations
-- Migration verification
-
-See [DEVELOPMENT.md](./DEVELOPMENT.md) for testing details.
-
-## Security
-
-### Current Implementation
-- Input validation
-- SQL injection prevention (GORM)
-- Request timeouts
-
-### Planned
-- Authentication/Authorization
-- Rate limiting
-- API keys
-- Webhook signing
-
-## Monitoring and Observability
-
-### Planned Features
-- Structured logging
-- Metrics (Prometheus)
-- Distributed tracing
-- Health check endpoints
+| Layer | Approach |
+|-------|---------|
+| Handler | Mock service via `JobServiceMock` |
+| Service | Mock repository via `JobRepoMock` |
+| Repository | Integration tests against real PostgreSQL (dockertest) |
+| Worker | Mock repository; tests cover process, handleFailure, backoff, pullJob, Start |
+| App | Mock HTTP server + sqlmock |

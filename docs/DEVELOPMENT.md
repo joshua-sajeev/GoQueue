@@ -1,518 +1,247 @@
 # GoQueue Development Guide
 
-Complete guide for setting up, developing, and contributing to GoQueue.
-
-## Table of Contents
-
-- [Prerequisites](#prerequisites)
-- [Initial Setup](#initial-setup)
-- [Development Workflow](#development-workflow)
-- [Testing](#testing)
-- [Database Operations](#database-operations)
-- [Code Organization](#code-organization)
-- [Coding Standards](#coding-standards)
-- [Contributing](#contributing)
-- [Troubleshooting](#troubleshooting)
+# Development Guide
 
 ## Prerequisites
 
-### Required
-
-- **Go 1.25+**: [Download](https://go.dev/dl/)
-- **Docker**: [Install Docker](https://docs.docker.com/get-docker/)
-- **Docker Compose**: [Install Docker Compose](https://docs.docker.com/compose/install/)
-- **Make**: Usually pre-installed on Unix systems
-
-### Optional
-
-- **PostgreSQL Client** (psql): For direct database access
-- **Redis CLI**: For Redis debugging (Phase 2)
-- **Air**: For standalone hot reloading (installed in container)
-- **Goose**: For standalone migrations (installed in container)
-
-### Verify Installation
+- Go 1.25+
+- Docker and Docker Compose
+- Make
 
 ```bash
 go version        # Should show 1.25+
 docker --version
-docker-compose --version
 make --version
 ```
 
 ## Initial Setup
 
-### 1. Clone Repository
-
 ```bash
-git clone https://github.com/yourusername/goqueue.git
+git clone https://github.com/joshua-sajeev/goqueue.git
 cd goqueue
-```
-
-### 2. Configure Environment
-
-```bash
 cp deployments/.env.example deployments/.env
 ```
 
 Edit `deployments/.env`:
 
-```bash
-# Database Configuration
+```env
 POSTGRES_USER=goqueue_user
-POSTGRES_PASSWORD=secure_password_here
+POSTGRES_PASSWORD=your_password_here
 POSTGRES_DB=goqueue
 POSTGRES_HOST=postgres
 POSTGRES_PORT=5432
-
-# Database Connection Settings
 DB_MAX_RETRIES=10
 DB_RETRY_DELAY=2s
-DB_CONNECT_TIMEOUT=5
-DB_LOG_LEVEL=warn    # Options: silent, error, warn, info
+DB_LOG_LEVEL=warn
+MAX_WORKERS=10
 ```
 
-### 3. Start Development Environment
+Start everything:
 
 ```bash
-make compose-up
+make up
 ```
 
-This command:
-- Starts PostgreSQL container
-- Starts GoQueue API container with hot reload
-- Runs database migrations automatically
-- Exposes API on `http://localhost:8080`
+This starts:
+- PostgreSQL container
+- API server with hot reload (Air)
+- Worker service with hot reload (Air)
+- Goose migrations run automatically on API startup
 
-### 4. Verify Setup
+Verify:
 
-Check health:
 ```bash
 curl http://localhost:8080/health
-# Response: {"status":"ok"}
-```
-
-Check database:
-```bash
-curl -X POST http://localhost:8080/health/db
-# Response: {"status":"ok"}
+# {"status":"healthy"}
 ```
 
 ## Development Workflow
 
-### Hot Reloading
+### Hot Reload
 
-The development environment uses Air for automatic code reloading:
+Both the API and worker use Air for automatic rebuild on file save. They share one Docker image but use different Air configs (`.air-api.toml` and `.air-worker.toml`), controlled by the `SERVICE_TYPE` env var in docker-compose.
 
-1. Start services: `make compose-up`
-2. Edit any `.go` file
-3. Save the file
-4. Air automatically rebuilds and restarts the server
-
-**Air Configuration** (`.air.toml`):
-- Watches: `*.go`, `*.tpl`, `*.tmpl`, `*.html` files
-- Excludes: `*_test.go`, `tmp/`, `vendor/`
-- Rebuild delay: 1 second
-
-### View Logs
+### Logs
 
 ```bash
-# Follow all logs
-make compose-logs
-
-# View specific service
-docker logs goqueue_container -f
-docker logs postgres_container -f
+make logs           # All services
+make api-logs       # API only
+make worker-logs    # Worker only
 ```
 
-### Stop Services
+### Rebuilding
 
 ```bash
-# Stop services
-make compose-down
-
-# Stop and remove volumes (deletes database)
-make compose-reset-db
+make rebuild        # Rebuild image, restart services
+make rebuild-clean  # No-cache rebuild (slower, use when dependencies change)
 ```
 
-### Running API Standalone (without Docker)
+### Database
 
 ```bash
-# Set environment variables
+make migrate-status   # Check pending migrations
+make migrate-up       # Apply pending migrations
+make migrate-down     # Rollback one migration
+make migrate-reset    # Rollback all migrations
+make db-connect       # psql shell inside container
+make reset-db         # WARNING!  Delete postgres volume (all data lost)
+```
+
+## Running Without Docker
+
+```bash
+# Requires a local PostgreSQL instance
+
 export POSTGRES_USER=goqueue_user
-export POSTGRES_PASSWORD=secure_password
+export POSTGRES_PASSWORD=your_password
 export POSTGRES_DB=goqueue
 export POSTGRES_HOST=localhost
 export POSTGRES_PORT=5432
 
 # Run migrations
-goose -dir ./migrations postgres "postgres://user:pass@localhost:5432/goqueue?sslmode=disable" up
+goose -dir ./migrations postgres \
+  "postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable" up
 
-# Run API
+# Start API
 go run cmd/api/main.go
+
+# Start worker (separate terminal)
+go run cmd/worker/main.go
 ```
 
 ## Testing
 
-### Unit Tests
-
-Run all unit tests:
 ```bash
+# Unit tests
+make test
 go test ./... -v
-```
 
-Run specific package:
-```bash
-go test ./internal/job/... -v
-```
-
-Run with coverage:
-```bash
-go test ./... -coverprofile=coverage.out
+# With coverage
+go test -coverprofile=coverage.out ./...
 go tool cover -html=coverage.out
-```
 
-### Integration Tests
+# Specific package
+go test ./internal/job/... -v
+go test ./internal/worker/... -v
 
-Integration tests use dockertest to spin up a real PostgreSQL instance.
-
-Run integration tests:
-```bash
+# Integration tests (requires Docker — spins up its own Postgres via dockertest)
 go test ./test/integration/... -v
+
+# Benchmarks
+make bench
+go test -run=NONE -bench=. -benchmem ./test/integration
+go test -run=NONE -bench=BenchmarkJobRepository_Get -benchmem ./test/integration
 ```
 
-### Test Organization
+### Test organization
 
-**Unit Tests**: Located next to source files
-- `internal/job/job_handler_test.go`
-- `internal/job/job_service_test.go`
-- `internal/storage/postgres/connection_test.go`
+| Location | Type | Uses |
+|----------|------|------|
+| `internal/job/*_test.go` | Unit | `JobServiceMock`, `JobRepoMock` |
+| `internal/worker/*_test.go` | Unit | `JobRepoMock` |
+| `internal/app/*_test.go` | Unit | `sqlmock`, mock server |
+| `internal/config/*_test.go` | Unit | injected `envProcess` |
+| `test/integration/` | Integration | Real PostgreSQL via dockertest |
 
-**Integration Tests**: In `test/integration/`
-- `test/integration/db_integration_test.go`
-- `test/integration/job_repo_test.go`
+## Code Organization
 
-### Writing Tests
+### Adding a new queue
 
-**Unit Test Example**:
-```go
-func TestJobService_CreateJob(t *testing.T) {
-    mockRepo := new(mocks.JobRepoMock)
-    service := job.NewJobService(mockRepo)
-    
-    mockRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
-    
-    err := service.CreateJob(context.Background(), &dto.JobCreateDTO{
-        Queue: "email",
-        Payload: json.RawMessage(`{"to":"test@example.com"}`),
-    })
-    
-    assert.NoError(t, err)
-    mockRepo.AssertExpectations(t)
-}
-```
+1. Add to `AllowedQueues` in `internal/config/constants.go`
+2. Add a payload DTO in `internal/dto/`
+3. Add payload validation in `internal/job/job_service.go` (switch case)
+4. Add a handler in `internal/worker/handler.go`
+5. Add the case to `worker.execute()` in `internal/worker/worker.go`
+6. Update `docs/API.md` with the new payload schema
 
-**Integration Test Example**:
-```go
-func TestJobRepository_Create(t *testing.T) {
-    db, ctx := setupTestDB(t)
-    defer closeTestDB(db)
-    
-    repo := postgres.NewJobRepository(db)
-    job := &models.Job{
-        Queue: "email",
-    }
-    
-    err := repo.Create(ctx, job)
-    
-    require.NoError(t, err)
-    assert.NotZero(t, job.ID)
-}
-```
+### Adding a new migration
 
-
-## Database Operations
-
-### Migrations
-
-**Check migration status**:
 ```bash
-make migrate-status
-```
+# Create migration file manually with timestamp prefix:
+# migrations/20260201120000_your_migration_name.sql
 
-**Run pending migrations**:
-```bash
+# Then apply:
 make migrate-up
 ```
 
-**Rollback last migration**:
-```bash
-make migrate-down
-```
+Migration format (Goose):
 
-**Create new migration**:
-```bash
-make migrate-create NAME=add_priority_to_jobs
-```
-
-This creates:
-```
-migrations/20251220120000_add_priority_to_jobs.sql
-```
-
-**Migration file format**:
 ```sql
 -- +goose Up
 -- +goose StatementBegin
 ALTER TABLE jobs ADD COLUMN priority INT DEFAULT 0;
-CREATE INDEX idx_jobs_priority ON jobs(priority);
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
-DROP INDEX idx_jobs_priority;
 ALTER TABLE jobs DROP COLUMN priority;
 -- +goose StatementEnd
 ```
 
-### Direct Database Access
-
-Connect to PostgreSQL:
-```bash
-make db-connect
-```
-
-Or manually:
-```bash
-docker exec -it postgres_container psql -U goqueue_user -d goqueue
-```
-
-Common queries:
-```sql
--- List all jobs
-SELECT id, queue, status, attempts FROM jobs;
-
--- Count jobs by status
-SELECT status, COUNT(*) FROM jobs GROUP BY status;
-
--- View recent jobs
-SELECT * FROM jobs ORDER BY created_at DESC LIMIT 10;
-
--- Clear all jobs (development only)
-DELETE FROM jobs;
-```
-
-### Database Reset
-
-**Warning**: This deletes all data.
-
-```bash
-make compose-reset-db
-make compose-up
-```
-
-## Code Organization
-
-### Package Structure
-
-```
-internal/
-├── config/          # Configuration constants
-├── dto/             # Data Transfer Objects
-├── job/             # Job domain logic
-│   ├── interface.go         # Interfaces
-│   ├── job_handler.go       # HTTP handlers
-│   ├── job_service.go       # Business logic
-│   └── payload_validation.go # Validators
-├── models/          # Database models
-├── storage/         # Data access layer
-│   └── postgres/
-└── mocks/           # Test mocks
-```
-
-### Adding a New Queue
-
-1. Update constants:
-```go
-var AllowedQueues = []string{
-    "default",
-    "email",
-    "webhooks",
-    "sms", // New
-}
-```
-
-2. Document in API.md and ARCHITECTURE.md
-
 ## Coding Standards
 
-### Go Style
+### Naming
 
-Follow official [Go Code Review Comments](https://github.com/golang/go/wiki/CodeReviewComments).
+| Thing | Convention |
+|-------|-----------|
+| Interfaces | `JobRepoInterface`, `JobServiceInterface` |
+| Implementations | `JobRepository`, `JobService` |
+| DTOs | `JobCreateDTO`, `JobResponseDTO` |
+| Mocks | `JobRepoMock`, `JobServiceMock` |
 
-### Naming Conventions
+### Errors
 
-- **Interfaces**: Suffix with `Interface` (e.g., `JobRepoInterface`)
-- **Implementations**: Descriptive names (e.g., `JobRepository`)
-- **DTOs**: Suffix with `DTO` (e.g., `JobCreateDTO`)
-- **Mocks**: Suffix with `Mock` (e.g., `JobRepoMock`)
+Use `common.Errf` or `common.NewAPIError` — these implement `error` and carry an HTTP status code that the error handler middleware reads:
 
-### Error Handling
-
-Use custom `APIError`:
 ```go
+// Simple
 return common.Errf(http.StatusBadRequest, "invalid queue: %s", queue)
+
+// With structured fields
+return common.NewAPIError(http.StatusBadRequest, "invalid queue", map[string]any{
+    "provided": queue,
+    "allowed":  config.AllowedQueues,
+})
 ```
 
-With fields:
-```go
-return common.NewAPIError(
-    http.StatusBadRequest,
-    "invalid queue",
-    map[string]any{
-        "provided": queue,
-        "allowed": config.AllowedQueues,
-    },
-)
-```
+### Context
 
-### Context Usage
+Always propagate `context.Context` as the first argument. This allows the DB layer to respect request timeouts and cancellations:
 
-Always pass `context.Context` as first parameter:
 ```go
 func (r *JobRepository) Create(ctx context.Context, job *models.Job) error {
     return r.db.WithContext(ctx).Create(job).Error
 }
 ```
 
-### Testing Standards
+### Tests
 
-- Table-driven tests
-- Descriptive test names
-- Setup and teardown functions
-- Mock all external dependencies
-- Test error cases
-
-### Documentation
-
-- Package comments for all packages
-- Exported function comments
-- Complex logic comments
-- Update docs/ when adding features
-
-## Contributing
-
-### Workflow
-
-1. **Fork** the repository
-2. **Create branch**: `git checkout -b feature/my-feature`
-3. **Write code** following standards
-4. **Write tests** (unit + integration)
-5. **Run tests**: `go test -tags=integration ./... -v`
-6. **Run linter** (if configured)
-7. **Commit**: `git commit -m "Add feature X"`
-8. **Push**: `git push origin feature/my-feature`
-9. **Open Pull Request**
-
-### Commit Messages
-
-Format:
-```
-<type>: <subject>
-
-<body>
-```
-
-Types:
-- `feat`: New feature
-- `fix`: Bug fix
-- `docs`: Documentation
-- `test`: Tests
-- `refactor`: Code refactoring
-- `chore`: Maintenance
-
-
-### Pull Request Guidelines
-
-- Clear title and description
-- Reference related issues
-- Include test results
-- Update relevant documentation
-- Ensure CI passes
+- Table-driven tests with descriptive case names
+- Mock all external dependencies (DB, HTTP server)
+- Cover both success and error paths
+- Use `mock.MatchedBy` for flexible argument matching
 
 ## Troubleshooting
 
-### Common Issues
-
-**Port already in use**:
+**Port 8080 already in use:**
 ```bash
-# Find process using port 8080
-lsof -i :8080
-# Kill process
+lsof -i :8080 | grep LISTEN
 kill -9 <PID>
 ```
 
-**Docker build fails**:
+**Database won't connect:**
 ```bash
-# Clean Docker cache
-docker system prune -a
-make compose-up
-```
-
-**Database connection fails**:
-```bash
-# Check PostgreSQL logs
 docker logs postgres_container
-
-# Verify container is running
-docker ps | grep postgres
-
-# Restart services
-make compose-down
-make compose-up
+make down && make up
 ```
 
-**Migrations fail**:
+**`tmp/` files owned by root (created by Docker):**
 ```bash
-# Check migration status
+make clean-force   # Uses sudo
+```
+
+**Migrations fail:**
+```bash
 make migrate-status
-
-# Reset and re-run
-make migrate-reset
-make migrate-up
-```
-
-### Getting Help
-
-1. Check [ERRORS.md](./ERRORS.md) for known issues
-2. Search existing GitHub issues
-3. Open a new issue with:
-   - Go version
-   - Docker version
-   - Error messages
-   - Steps to reproduce
-
-## Useful Commands
-
-```bash
-# Development
-make compose-up              # Start services
-make compose-down            # Stop services
-make compose-logs            # View logs
-
-# Database
-make migrate-up              # Run migrations
-make migrate-down            # Rollback migration
-make migrate-status          # Check status
-make db-connect              # Connect to database
-
-# Testing
-go test ./...                           # Unit tests
-go test -tags=integration ./...         # All tests
-go test -cover ./...                    # With coverage
-go test -v -run TestName ./internal/... # Specific test
-
-# Code Quality
-go fmt ./...                 # Format code
-go vet ./...                # Vet code
-go mod tidy                 # Clean dependencies
+make migrate-reset && make migrate-up
 ```

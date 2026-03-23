@@ -361,6 +361,156 @@ func TestJobRepository_IncrementAttempts(t *testing.T) {
 	}
 }
 
+func TestJobRepository_IncrementAttemptsAndGet(t *testing.T) {
+	tests := []struct {
+		name           string
+		setup          func(db *gorm.DB) uint
+		wantErr        bool
+		errContains    string
+		wantAttempts   int
+		wantMaxRetries int
+	}{
+		{
+			name: "increments from 0 and returns correct values",
+			setup: func(db *gorm.DB) uint {
+				job := models.Job{
+					Queue:      "default",
+					Attempts:   0,
+					MaxRetries: 3,
+				}
+				require.NoError(t, db.Create(&job).Error)
+				return job.ID
+			},
+			wantErr:        false,
+			wantAttempts:   1,
+			wantMaxRetries: 3,
+		},
+		{
+			name: "increments from non-zero attempts",
+			setup: func(db *gorm.DB) uint {
+				job := models.Job{
+					Queue:      "default",
+					Attempts:   2,
+					MaxRetries: 5,
+				}
+				require.NoError(t, db.Create(&job).Error)
+				return job.ID
+			},
+			wantErr:        false,
+			wantAttempts:   3,
+			wantMaxRetries: 5,
+		},
+		{
+			name: "returns correct max_retries regardless of attempts",
+			setup: func(db *gorm.DB) uint {
+				job := models.Job{
+					Queue:      "default",
+					Attempts:   0,
+					MaxRetries: 10,
+				}
+				require.NoError(t, db.Create(&job).Error)
+				return job.ID
+			},
+			wantErr:        false,
+			wantAttempts:   1,
+			wantMaxRetries: 10,
+		},
+		{
+			name: "multiple sequential calls increment correctly",
+			setup: func(db *gorm.DB) uint {
+				job := models.Job{
+					Queue:      "default",
+					Attempts:   0,
+					MaxRetries: 3,
+				}
+				require.NoError(t, db.Create(&job).Error)
+				return job.ID
+			},
+			wantErr:        false,
+			wantAttempts:   1,
+			wantMaxRetries: 3,
+		},
+		{
+			name: "non-existent id returns record not found",
+			setup: func(db *gorm.DB) uint {
+				return 99999
+			},
+			wantErr:     true,
+			errContains: "increment and get",
+		},
+		{
+			name: "closed db returns error",
+			setup: func(db *gorm.DB) uint {
+				job := models.Job{Queue: "default", Attempts: 0, MaxRetries: 3}
+				require.NoError(t, db.Create(&job).Error)
+
+				sqlDB, err := db.DB()
+				require.NoError(t, err)
+				sqlDB.Close()
+
+				return job.ID
+			},
+			wantErr:     true,
+			errContains: "increment and get",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db, ctx := setupTestDB(t)
+			defer closeTestDB(db)
+
+			repo := postgres.NewJobRepository(db)
+			id := tt.setup(db)
+
+			attempts, maxRetries, err := repo.IncrementAttemptsAndGet(ctx, id)
+
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errContains)
+				assert.Equal(t, 0, attempts)
+				assert.Equal(t, 0, maxRetries)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantAttempts, attempts)
+			assert.Equal(t, tt.wantMaxRetries, maxRetries)
+
+			// Verify the increment actually persisted in the DB
+			var saved models.Job
+			require.NoError(t, db.First(&saved, id).Error)
+			assert.Equal(t, tt.wantAttempts, saved.Attempts)
+		})
+	}
+}
+
+func TestJobRepository_IncrementAttemptsAndGet_Sequential(t *testing.T) {
+	db, ctx := setupTestDB(t)
+	defer closeTestDB(db)
+
+	repo := postgres.NewJobRepository(db)
+
+	job := models.Job{
+		Queue:      "default",
+		Attempts:   0,
+		MaxRetries: 5,
+	}
+	require.NoError(t, db.Create(&job).Error)
+
+	// Call three times and verify each increment is reflected
+	for call := 1; call <= 3; call++ {
+		attempts, maxRetries, err := repo.IncrementAttemptsAndGet(ctx, job.ID)
+		require.NoError(t, err)
+		assert.Equal(t, call, attempts, "call %d: attempts mismatch", call)
+		assert.Equal(t, 5, maxRetries, "call %d: maxRetries should not change", call)
+	}
+
+	// Confirm final DB state
+	var saved models.Job
+	require.NoError(t, db.First(&saved, job.ID).Error)
+	assert.Equal(t, 3, saved.Attempts)
+}
 func TestJobRepository_SaveResult(t *testing.T) {
 	tests := []struct {
 		name        string
